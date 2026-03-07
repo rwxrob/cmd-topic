@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+twitch token -u -s channel:manage:broadcast &> /tmp/cache-twitch-token-out$$
+twitch api get users | jq -r '.data[0].id, .data[0].login'

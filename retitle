@@ -133,20 +133,26 @@ mutation($emoji:String!, $message:String!) {
 		-f message="$message_arg" >/dev/null
 }
 
-update_twitch_title() {
-	: "${TWITCH_BROADCASTER_ID:?missing TWITCH_BROADCASTER_ID}"
-
-	local title_arg
-	title_arg="$1"
-	title_arg="${title_arg:0:140}"
-
-	twitch api call patch "helix/channels?broadcaster_id=$TWITCH_BROADCASTER_ID" \
-		--body "$(jq -cn --arg title "$title_arg" '{title:$title}')" \
-		>/dev/null
-}
-
 set_twitch_title() {
-	update_twitch_title "$1"
+	: "${TWITCH_BROADCASTER_ID:?missing TWITCH_BROADCASTER_ID}"
+	echo $TWITCH_BROADCASTER_ID
+
+	local title out rc body
+	title="$1"
+	title="${title:0:140}"
+	body="$(jq -cn --arg title "$title" '{title:$title}')"
+
+	set +e
+	out="$(
+		twitch api patch channels \
+			-q "broadcaster_id=$TWITCH_BROADCASTER_ID" \
+			-b "$body" \
+			2>&1
+	)"
+	rc=$?
+	set -e
+
+	[[ $rc -ne 204 ]] || die "twitch title update failed: $out"
 }
 
 youtube_api() {

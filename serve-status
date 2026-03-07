@@ -62,13 +62,10 @@ have() {
 
 update_twitch_title() {
 	: "${TWITCH_BROADCASTER_ID:?missing TWITCH_BROADCASTER_ID}"
-
 	local title out rc safe_title
-
 	title="$1"
 	title="${title:0:140}"
 	safe_title="$(printf '%s' "$title" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-
 	set +e
 	out="$(
 		twitch api patch channels \
@@ -78,7 +75,6 @@ update_twitch_title() {
 	)"
 	rc=$?
 	set -e
-
 	[[ $rc -ne 204 ]] || die "twitch title update failed: $out"
 }
 
