@@ -51,6 +51,81 @@ need() {
 	command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
 }
 
+github_issue_emoji() {
+	local issue labels
+
+	issue="$1"
+
+	labels="$(
+		gh issue view "$issue" --json labels --jq '.labels[].name' 2>/dev/null |
+			tr '[:upper:]' '[:lower:]'
+	)" || return 1
+
+	while IFS= read -r label; do
+		case "$label" in
+		bug | fix | regression | broken)
+			printf ':bug:\n'
+			return 0
+			;;
+		enhancement | feature | feat)
+			printf ':sparkles:\n'
+			return 0
+			;;
+		documentation | docs)
+			printf ':memo:\n'
+			return 0
+			;;
+		question)
+			printf ':thinking:\n'
+			return 0
+			;;
+		help\ wanted | help-wanted)
+			printf ':raising_hand:\n'
+			return 0
+			;;
+		good\ first\ issue | beginner | starter)
+			printf ':seedling:\n'
+			return 0
+			;;
+		refactor | cleanup | chore)
+			printf ':wrench:\n'
+			return 0
+			;;
+		test | tests | testing)
+			printf ':white_check_mark:\n'
+			return 0
+			;;
+		performance | perf)
+			printf ':zap:\n'
+			return 0
+			;;
+		security)
+			printf ':lock:\n'
+			return 0
+			;;
+		ci | cd | build)
+			printf ':gear:\n'
+			return 0
+			;;
+		dependencies | dependency | deps)
+			printf ':package:\n'
+			return 0
+			;;
+		design | ui | ux)
+			printf ':art:\n'
+			return 0
+			;;
+		infra | ops | deployment)
+			printf ':construction:\n'
+			return 0
+			;;
+		*) ;;
+		esac
+	done <<<"$labels"
+
+	printf ':gear:\n'
+}
+
 github_issue_title() {
 	local issue out
 	issue="$1"
@@ -263,8 +338,9 @@ main() {
 		save_titles "$titles_file" "$prev_title" "$current_title"
 
 	elif [[ $# -eq 1 && "$1" =~ ^[0-9]+$ ]]; then
-		new_title="$(github_issue_title "$1")"
-
+		issue_title="$(github_issue_title "$1")"
+		issue_emoji="$(github_issue_emoji "$1")"
+		new_title="$issue_emoji $issue_title"
 	else
 		new_title="$*"
 	fi
