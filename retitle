@@ -253,17 +253,21 @@ main() {
 
 	titles_file="${TITLES:-$HOME/.titles}"
 
-	if [[ $# -eq 1 && "$1" =~ ^[0-9]+$ ]]; then
-		arg="$1"
-		new_title="$(github_issue_title "$arg")"
+	load_titles "$titles_file"
+	load_titles "$titles_file"
+
+	if [[ $# -eq 1 && "$1" == "-" ]]; then
+		[[ -n "$prev_title" ]] || die 'no previous title to toggle to'
+
+		new_title="$prev_title"
+		save_titles "$titles_file" "$prev_title" "$current_title"
+
+	elif [[ $# -eq 1 && "$1" =~ ^[0-9]+$ ]]; then
+		new_title="$(github_issue_title "$1")"
+
 	else
 		new_title="$*"
 	fi
-
-	load_titles "$titles_file"
-	echo current: $current_title
-	echo prev: $prev_title
-	echo new: $new_title
 
 	if [[ "$new_title" == "$current_title" ]]; then
 		echo "Title already set"
