@@ -1,27 +1,155 @@
-#!/usr/bin/env python3
+#!/usr/bin/env bash
+set -euo pipefail
 
-from google_auth_oauthlib.flow import InstalledAppFlow
-from pathlib import Path
-import os
+die() {
+	printf 'Error: %s\n' "$*" >&2
+	exit 1
+}
 
-config_dir = Path.home() / ".config" / "youtube"
-client_secret_file = config_dir / "client_secret.json"
-token_file = config_dir / "token"
+need() {
+	command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
+}
 
-SCOPES = ["https://www.googleapis.com/auth/youtube"]
+first_cmd() {
+	local cmd
+	for cmd in "$@"; do
+		if command -v "$cmd" >/dev/null 2>&1; then
+			printf '%s\n' "$cmd"
+			return 0
+		fi
+	done
+	return 1
+}
 
-flow = InstalledAppFlow.from_client_secrets_file(
-    str(client_secret_file),
-    SCOPES,
-)
+urlencode() {
+	jq -rn --arg v "$1" '$v|@uri'
+}
 
-creds = flow.run_local_server(port=0)
+config_dir="${HOME}/.config/youtube"
+client_secret_file="${config_dir}/client_secret.json"
+token_file="${config_dir}/token"
+token_json_file="${config_dir}/token.json"
+scope='https://www.googleapis.com/auth/youtube'
 
-config_dir.mkdir(parents=True, exist_ok=True)
+need jq
+need curl
+need nc
 
-with open(token_file, "w") as f:
-    f.write(creds.token)
+[[ -f "$client_secret_file" ]] ||
+	die "missing client secret file: $client_secret_file"
 
-os.chmod(token_file, 0o600)
+client_id="$(jq -r '.installed.client_id // empty' "$client_secret_file")"
+client_secret="$(jq -r '.installed.client_secret // empty' "$client_secret_file")"
 
-print(f"Token written to {token_file}")
+[[ -n "$client_id" ]] || die "could not read .installed.client_id from $client_secret_file"
+[[ -n "$client_secret" ]] || die "could not read .installed.client_secret from $client_secret_file"
+
+mkdir -p "$config_dir"
+chmod 700 "$config_dir"
+
+port="${YT_LOOPBACK_PORT:-53682}"
+redirect_uri="http://127.0.0.1:${port}"
+
+state="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24 || true)"
+[[ -n "$state" ]] || state="state$$"
+
+auth_url="https://accounts.google.com/o/oauth2/v2/auth?client_id=$(urlencode "$client_id")&redirect_uri=$(urlencode "$redirect_uri")&response_type=code&scope=$(urlencode "$scope")&access_type=offline&prompt=consent&state=$(urlencode "$state")"
+
+open_cmd="$(first_cmd open xdg-open || true)"
+
+printf 'Open this URL if your browser does not open automatically:\n\n%s\n\n' "$auth_url"
+
+if [[ -n "$open_cmd" ]]; then
+	"$open_cmd" "$auth_url" >/dev/null 2>&1 || true
+fi
+
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"' EXIT
+
+request_file="$tmpdir/request.txt"
+response_file="$tmpdir/response.txt"
+
+cat >"$response_file" <<'EOF'
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+Connection: close
+
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>You may close this window</title></head>
+<body style="font-family: sans-serif; padding: 2rem;">
+<h1>Authorization received</h1>
+<p>You can close this window and return to the terminal.</p>
+</body>
+</html>
+EOF
+
+printf 'Waiting for Google OAuth callback on %s ...\n' "$redirect_uri" >&2
+
+(
+	while :; do
+		nc -l 127.0.0.1 "$port" <"$response_file" >"$request_file" && break
+	done
+) &
+listener_pid="$!"
+
+for _ in $(seq 1 300); do
+	if [[ -s "$request_file" ]]; then
+		break
+	fi
+	sleep 1
+done
+
+kill "$listener_pid" >/dev/null 2>&1 || true
+wait "$listener_pid" 2>/dev/null || true
+
+[[ -s "$request_file" ]] || die "timed out waiting for OAuth callback"
+
+request_line="$(head -n 1 "$request_file" | tr -d '\r')"
+path_qs="${request_line#GET }"
+path_qs="${path_qs%% HTTP/*}"
+
+query="${path_qs#*\?}"
+[[ "$query" != "$path_qs" ]] || die "callback did not contain a query string"
+
+code="$(printf '%s\n' "$query" | tr '&' '\n' | sed -n 's/^code=//p' | head -n1)"
+returned_state="$(printf '%s\n' "$query" | tr '&' '\n' | sed -n 's/^state=//p' | head -n1)"
+oauth_error="$(printf '%s\n' "$query" | tr '&' '\n' | sed -n 's/^error=//p' | head -n1)"
+
+urldecode() {
+	printf '%b' "${1//%/\\x}" | sed 's/+/ /g'
+}
+
+code="$(urldecode "${code:-}")"
+returned_state="$(urldecode "${returned_state:-}")"
+oauth_error="$(urldecode "${oauth_error:-}")"
+
+[[ -z "$oauth_error" ]] || die "OAuth error: $oauth_error"
+[[ -n "$code" ]] || die "no authorization code received"
+[[ "$returned_state" == "$state" ]] || die "state mismatch"
+
+token_json="$(
+	curl --silent --show-error --fail \
+		-X POST 'https://oauth2.googleapis.com/token' \
+		-H 'Content-Type: application/x-www-form-urlencoded' \
+		--data-urlencode "client_id=$client_id" \
+		--data-urlencode "client_secret=$client_secret" \
+		--data-urlencode "code=$code" \
+		--data-urlencode 'grant_type=authorization_code' \
+		--data-urlencode "redirect_uri=$redirect_uri"
+)"
+
+access_token="$(printf '%s\n' "$token_json" | jq -r '.access_token // empty')"
+
+[[ -n "$access_token" ]] || {
+	printf '%s\n' "$token_json" >&2
+	die 'did not receive access_token from Google'
+}
+
+printf '%s\n' "$access_token" >"$token_file"
+printf '%s\n' "$token_json" >"$token_json_file"
+
+chmod 600 "$token_file" "$token_json_file"
+
+printf 'Access token written to %s\n' "$token_file"
+printf 'Full OAuth response written to %s\n' "$token_json_file"
