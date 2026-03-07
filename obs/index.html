@@ -76,7 +76,7 @@
 
       <div class="brand">
         <div class="logo">
-          <img src="gnome.jpg" alt="Gnome logo">
+          <img src="logo.jpg" alt="Logo">
         </div>
         <div class="bangers">linktr.ee/rwxrob</div>
       </div>
@@ -92,7 +92,7 @@
 
 async function loadTopic() {
   try {
-    const response = await fetch('http://127.0.0.1:8787');
+    const response = await fetch('http://127.0.0.1:8080');
     const text = await response.text();
     document.getElementById('topic').textContent = text.trim();
   } catch (err) {
