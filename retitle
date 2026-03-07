@@ -261,8 +261,11 @@ main() {
 	fi
 
 	load_titles "$titles_file"
+	echo current: $current_title
+	echo prev: $prev_title
+	echo new: $new_title
 
-	if [[ "$new_title" == "$prev_title" ]]; then
+	if [[ "$new_title" == "$current_title" ]]; then
 		echo "Title already set"
 		exit 0
 	fi
