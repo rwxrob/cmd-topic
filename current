@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# read arguments as new title
+
+# if argument is a single number assume is it a github issue title
+
+# load the current and prev titles from ~/.titles or TITLES
+
+# if new title is same as prev title do nothing
+
+# add title to first line of titles file and push prev title to second
+
+# split new title into emoji and title
+
+# combine emoji and title into emoji_title
+
+# set github status to emoji and title
+
+# set twitch title to emoji_title
+
+# set youtube live title to emoji_title
+

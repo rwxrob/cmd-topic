@@ -3,9 +3,9 @@
 
 set -euo pipefail
 
-TWITCH_BROADCASTER_ID=${TWITCH_BROADCASTER_ID-447179030} #rwxrob default
+TWITCH_BROADCASTER_ID=${TWITCH_BROADCASTER_ID-447179028} #rwxrob default
 
-PORT="${PORT:-8787}"
+PORT="${PORT:-8784}"
 LOGIN="${LOGIN:-rwxrob}"
 EMOJI_CACHE="/tmp/github-emojis.json"
 

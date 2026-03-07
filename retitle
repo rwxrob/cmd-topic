@@ -1,0 +1,300 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+die() {
+	printf 'Error: %s\n' "$*" >&2
+	exit 1
+}
+
+load_youtube_token() {
+	local file token
+	file="${YOUTUBE_TOKEN_FILE:-$HOME/.config/youtube/token}"
+
+	[[ -f "$file" ]] ||
+		die "YouTube token file not found: $file"
+
+	token="$(<"$file")"
+	token="${token//$'\n'/}"
+
+	[[ -n "$token" ]] ||
+		die "YouTube token file is empty: $file"
+
+	YOUTUBE_ACCESS_TOKEN="$token"
+}
+
+usage() {
+	cat <<'EOF'
+Usage:
+  retitle <new title words...>
+  retitle <issue-number>
+
+Environment:
+  TITLES                  Path to titles history file (default: ~/.titles)
+  TWITCH_BROADCASTER_ID   Twitch broadcaster id
+  YOUTUBE_BROADCAST_ID    Optional explicit live broadcast id
+  YOUTUBE_BROADCAST_STATUS
+                          Optional broadcast status to search first
+                          (default: active, then upcoming)
+
+Notes:
+  When given a single number, this script assumes the current
+  directory is a git repo and uses gh to look up that issue title.
+
+  The titles file keeps:
+    line 1 = current title
+    line 2 = previous title
+EOF
+	exit "${1:-0}"
+}
+
+need() {
+	command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
+}
+
+github_issue_title() {
+	local issue out
+	issue="$1"
+
+	git rev-parse --is-inside-work-tree >/dev/null 2>&1 ||
+		die 'current directory is not inside a git repo'
+
+	out="$(gh issue view "$issue" --json title --jq .title 2>/dev/null)" ||
+		die "could not get issue #$issue from current repo"
+
+	[[ -n "$out" ]] || die "issue #$issue has no title"
+	printf '%s\n' "$out"
+}
+
+load_titles() {
+	local file dir
+	file="$1"
+	dir="${file%/*}"
+	[[ "$dir" != "$file" ]] || dir='.'
+
+	mkdir -p "$dir"
+	[[ -f "$file" ]] || : >"$file"
+
+	current_title="$(sed -n '1p' "$file")"
+	prev_title="$(sed -n '2p' "$file")"
+}
+
+save_titles() {
+	local file new prev tmp
+	file="$1"
+	new="$2"
+	prev="$3"
+	tmp="$(mktemp)"
+
+	{
+		printf '%s\n' "$new"
+		printf '%s\n' "$prev"
+	} >"$tmp"
+
+	mv "$tmp" "$file"
+}
+
+split_emoji_title() {
+	local input first rest
+	input="$1"
+
+	first="${input%% *}"
+	if [[ "$first" == :*:* ]]; then
+		emoji="$first"
+		rest="${input#"$first"}"
+		rest="${rest# }"
+		title="$rest"
+	else
+		emoji=':speech_balloon:'
+		title="$input"
+	fi
+
+	[[ -n "${title// /}" ]] || title="$input"
+	emoji_title="$(emoji_to_unicode "$emoji") $rest"
+	echo "$emoji_title"
+}
+
+set_github_status() {
+	local emoji_arg message_arg
+	emoji_arg="$1"
+	message_arg="$2"
+
+	gh api graphql \
+		-f query='
+mutation($emoji:String!, $message:String!) {
+  changeUserStatus(input: {emoji: $emoji, message: $message}) {
+    status {
+      emoji
+      message
+    }
+  }
+}
+' \
+		-f emoji="$emoji_arg" \
+		-f message="$message_arg" >/dev/null
+}
+
+update_twitch_title() {
+	: "${TWITCH_BROADCASTER_ID:?missing TWITCH_BROADCASTER_ID}"
+
+	local title_arg
+	title_arg="$1"
+	title_arg="${title_arg:0:140}"
+
+	twitch api call patch "helix/channels?broadcaster_id=$TWITCH_BROADCASTER_ID" \
+		--body "$(jq -cn --arg title "$title_arg" '{title:$title}')" \
+		>/dev/null
+}
+
+set_twitch_title() {
+	update_twitch_title "$1"
+}
+
+youtube_api() {
+
+	[[ -n "${YOUTUBE_ACCESS_TOKEN:-}" ]] || load_youtube_token
+
+	local method endpoint
+	method="$1"
+	endpoint="$2"
+	shift 2
+
+	curl --silent --show-error --fail \
+		-X "$method" \
+		-H "Authorization: Bearer $YOUTUBE_ACCESS_TOKEN" \
+		-H 'Accept: application/json' \
+		"$@" \
+		"https://www.googleapis.com/youtube/v3/$endpoint"
+}
+
+youtube_find_broadcast_id() {
+	local json
+
+	json="$(
+		youtube_api GET \
+			'liveBroadcasts?part=id,snippet,status&mine=true&broadcastType=all&maxResults=10'
+	)" || return 1
+
+	printf '%s\n' "$json" |
+		jq -r '
+			.items
+			| (map(select(
+				.status.lifeCycleStatus == "live" or
+				.status.lifeCycleStatus == "ready" or
+				.status.lifeCycleStatus == "created"
+			))[0].id)
+			  // .[0].id
+			  // empty
+		'
+}
+
+youtube_get_broadcast() {
+	local id
+	id="$1"
+
+	youtube_api GET \
+		"liveBroadcasts?part=id,snippet,status&id=$id"
+}
+
+set_youtube_live_title() {
+
+	local title_arg id json body preferred_status
+	title_arg="$1"
+	preferred_status="${YOUTUBE_BROADCAST_STATUS:-active}"
+
+	if [[ -n "${YOUTUBE_BROADCAST_ID:-}" ]]; then
+		id="$YOUTUBE_BROADCAST_ID"
+	else
+		id="$(youtube_find_broadcast_id "$preferred_status" 2>/dev/null || true)"
+		if [[ -z "$id" && "$preferred_status" != upcoming ]]; then
+			id="$(youtube_find_broadcast_id upcoming 2>/dev/null || true)"
+		fi
+	fi
+
+	[[ -n "$id" ]] || die 'could not find a YouTube live broadcast to update'
+
+	json="$(youtube_get_broadcast "$id")" ||
+		die "could not fetch YouTube broadcast $id"
+
+	body="$(
+		printf '%s\n' "$json" |
+			jq -c --arg title "$title_arg" '
+				.items[0]
+				| {
+					id,
+					snippet: (.snippet + {title: $title})
+				}
+			'
+	)"
+
+	[[ -n "$body" && "$body" != "null" ]] ||
+		die "could not build update body for YouTube broadcast $id"
+
+	youtube_api PUT \
+		'liveBroadcasts?part=snippet' \
+		-H 'Content-Type: application/json' \
+		--data "$body" >/dev/null
+}
+
+main() {
+	local titles_file arg new_title
+
+	[[ $# -gt 0 ]] || usage 1
+
+	need git
+	need gh
+	need jq
+	need curl
+
+	titles_file="${TITLES:-$HOME/.titles}"
+
+	if [[ $# -eq 1 && "$1" =~ ^[0-9]+$ ]]; then
+		arg="$1"
+		new_title="$(github_issue_title "$arg")"
+	else
+		new_title="$*"
+	fi
+
+	load_titles "$titles_file"
+
+	if [[ "$new_title" == "$prev_title" ]]; then
+		echo "Title already set"
+		exit 0
+	fi
+
+	save_titles "$titles_file" "$new_title" "$current_title"
+
+	split_emoji_title "$new_title"
+
+	set_github_status "$emoji" "$title"
+	set_twitch_title "$emoji_title"
+	set_youtube_live_title "$emoji_title"
+}
+
+emoji_to_unicode() {
+
+	local name emoji_json unicode
+
+	name="$1"
+	name="${name#:}"
+	name="${name%:}"
+
+	emoji_json="${HOME}/.cache/github-emojis.json"
+
+	if [[ ! -f "$emoji_json" ]]; then
+		curl -s https://api.github.com/emojis >"$emoji_json"
+	fi
+
+	unicode="$(
+		jq -r --arg name "$name" '
+			.[ $name ] // empty
+		' "$emoji_json"
+	)"
+
+	if [[ "$unicode" =~ unicode/([0-9a-fA-F-]+)\.png ]]; then
+		printf '%b' "$(printf '\\U%08x' "0x${BASH_REMATCH[1]}")"
+	else
+		printf ':%s:' "$name"
+	fi
+}
+
+main "$@"

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+curl -sS \
+	-H "Authorization: Bearer $(<~/.config/youtube/token)" \
+	'https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status&mine=true&broadcastType=all&maxResults=10' |
+	jq .
