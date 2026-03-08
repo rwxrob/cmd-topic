@@ -291,7 +291,13 @@ set_youtube_live_title() {
 		fi
 	fi
 
-	[[ -n "$id" ]] || die 'could not find a YouTube live broadcast to update, cache-yt-token?'
+	if [[ -z "$id" ]]; then
+		cache-yt-token
+		set_youtube_live_title
+		return
+	fi
+
+	[[ -n "$id" ]] || die 'could not find a YouTube live broadcast to update'
 
 	json="$(youtube_get_broadcast "$id")" ||
 		die "could not fetch YouTube broadcast $id"
