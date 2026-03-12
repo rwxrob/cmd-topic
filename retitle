@@ -6,20 +6,8 @@ die() {
 	exit 1
 }
 
-load_youtube_token() {
-	local file token
-	file="${YOUTUBE_TOKEN_FILE:-$HOME/.config/youtube/token}"
-
-	[[ -f "$file" ]] ||
-		die "YouTube token file not found: $file"
-
-	token="$(<"$file")"
-	token="${token//$'\n'/}"
-
-	[[ -n "$token" ]] ||
-		die "YouTube token file is empty: $file"
-
-	YOUTUBE_ACCESS_TOKEN="$token"
+youtube_token_file() {
+	printf '%s\n' "${YOUTUBE_TOKEN_FILE:-$HOME/.config/youtube/token.json}"
 }
 
 usage() {
@@ -31,10 +19,14 @@ Usage:
 Environment:
   TITLES                  Path to titles history file (default: ~/.titles)
   TWITCH_BROADCASTER_ID   Twitch broadcaster id
+
   YOUTUBE_BROADCAST_ID    Optional explicit live broadcast id
   YOUTUBE_BROADCAST_STATUS
                           Optional broadcast status to search first
                           (default: active, then upcoming)
+
+  YOUTUBE_TOKEN_FILE      Path to YouTube OAuth token JSON
+                          (default: ~/.config/youtube/token.json)
 
 Notes:
   When given a single number, this script assumes the current
@@ -49,6 +41,10 @@ EOF
 
 need() {
 	command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
+}
+
+have() {
+	command -v "$1" >/dev/null 2>&1
 }
 
 github_issue_emoji() {
@@ -168,30 +164,23 @@ save_titles() {
 	mv "$tmp" "$file"
 }
 
-split_emoji_title() {
-	local input first rest
-	input="$1"
-
-	first="${input%% *}"
-	if [[ "$first" == :*:* ]]; then
-		emoji="$first"
-		rest="${input#"$first"}"
-		rest="${rest# }"
-		title="$rest"
-	else
-		emoji=':speech_balloon:'
-		title="$input"
-	fi
-
-	[[ -n "${title// /}" ]] || title="$input"
-	emoji_title="$(emoji2unicode "$emoji") $rest"
-	echo "$emoji_title"
-}
-
 set_github_status() {
-	local emoji_arg message_arg
-	emoji_arg="$1"
-	message_arg="$2"
+
+	local text emoji message
+
+	text="$*"
+
+	# extract first Unicode character
+	emoji="$(printf '%s' "$text" | perl -CSD -ne 'print substr($_,0,1)')"
+
+	# detect if it is an emoji
+	if printf '%s' "$emoji" | perl -CSD -ne 'exit(!( /\p{Emoji}/ ))'; then
+		message="$(printf '%s' "$text" | perl -CSD -ne 'print substr($_,1)')"
+		message="${message#"${message%%[![:space:]]*}"}"
+	else
+		emoji='💻'
+		message="$text"
+	fi
 
 	gh api graphql \
 		-f query='
@@ -204,13 +193,12 @@ mutation($emoji:String!, $message:String!) {
   }
 }
 ' \
-		-f emoji="$emoji_arg" \
-		-f message="$message_arg" >/dev/null
+		-f emoji="$emoji" \
+		-f message="$message" >/dev/null
 }
 
 set_twitch_title() {
 	: "${TWITCH_BROADCASTER_ID:?missing TWITCH_BROADCASTER_ID}"
-	echo $TWITCH_BROADCASTER_ID
 
 	local title out rc body
 	title="$1"
@@ -227,21 +215,27 @@ set_twitch_title() {
 	rc=$?
 	set -e
 
-	[[ $rc -ne 204 ]] || die "twitch title update failed: $out"
+	[[ $rc != 204 ]] || die "twitch title update failed: $out"
 }
 
 youtube_api() {
-
-	[[ -n "${YOUTUBE_ACCESS_TOKEN:-}" ]] || load_youtube_token
-
 	local method endpoint
 	method="$1"
 	endpoint="$2"
 	shift 2
 
+	cache-yt-token
+	token_file=$(youtube_token_file)
+	access_token="$(jq -r .access_token "$token_file")"
+
+	[[ -n "$access_token" ]] || {
+		printf 'failed to get access_token from %s\n' "$token_file" >&2
+		return 1
+	}
+
 	curl --silent --show-error --fail \
 		-X "$method" \
-		-H "Authorization: Bearer $YOUTUBE_ACCESS_TOKEN" \
+		-H "Authorization: Bearer $access_token" \
 		-H 'Accept: application/json' \
 		"$@" \
 		"https://www.googleapis.com/youtube/v3/$endpoint"
@@ -255,17 +249,16 @@ youtube_find_broadcast_id() {
 			'liveBroadcasts?part=id,snippet,status&mine=true&broadcastType=all&maxResults=10'
 	)" || return 1
 
-	printf '%s\n' "$json" |
-		jq -r '
-			.items
-			| (map(select(
-				.status.lifeCycleStatus == "live" or
-				.status.lifeCycleStatus == "ready" or
-				.status.lifeCycleStatus == "created"
-			))[0].id)
-			  // .[0].id
-			  // empty
-		'
+	jq -r '
+ 			.items
+ 			| (map(select(
+ 				.status.lifeCycleStatus == "live" or
+ 				.status.lifeCycleStatus == "ready" or
+ 				.status.lifeCycleStatus == "created"
+ 			))[0].id)
+ 			  // .[0].id
+ 			  // empty
+ 		' <<<"$json"
 }
 
 youtube_get_broadcast() {
@@ -285,23 +278,13 @@ set_youtube_live_title() {
 	if [[ -n "${YOUTUBE_BROADCAST_ID:-}" ]]; then
 		id="$YOUTUBE_BROADCAST_ID"
 	else
-		id="$(youtube_find_broadcast_id "$preferred_status" 2>/dev/null || true)"
-		if [[ -z "$id" && "$preferred_status" != upcoming ]]; then
-			id="$(youtube_find_broadcast_id upcoming 2>/dev/null || true)"
-		fi
-	fi
-
-	if [[ -z "$id" ]]; then
-		cache-yt-token
-		set_youtube_live_title
-		return
+		id="$(youtube_find_broadcast_id "$preferred_status" || true)"
 	fi
 
 	[[ -n "$id" ]] || die 'could not find a YouTube live broadcast to update'
 
 	json="$(youtube_get_broadcast "$id")" ||
 		die "could not fetch YouTube broadcast $id"
-
 	body="$(
 		printf '%s\n' "$json" |
 			jq -c --arg title "$title_arg" '
@@ -319,11 +302,12 @@ set_youtube_live_title() {
 	youtube_api PUT \
 		'liveBroadcasts?part=snippet' \
 		-H 'Content-Type: application/json' \
-		--data "$body" >/dev/null
+		--data "$body" >/dev/null ||
+		die "could not update the youtube title"
 }
 
 main() {
-	local titles_file arg new_title
+	local titles_file new_title
 
 	[[ $# -gt 0 ]] || usage 1
 
@@ -334,7 +318,6 @@ main() {
 
 	titles_file="${TITLES:-$HOME/.titles}"
 
-	load_titles "$titles_file"
 	load_titles "$titles_file"
 
 	if [[ $# -eq 1 && "$1" == "-" ]]; then
@@ -357,12 +340,9 @@ main() {
 	fi
 
 	save_titles "$titles_file" "$new_title" "$current_title"
-
-	split_emoji_title "$new_title"
-
-	set_github_status "$emoji" "$title"
-	set_twitch_title "$emoji_title"
-	set_youtube_live_title "$emoji_title"
+	set_github_status "$new_title"
+	set_twitch_title "$new_title"
+	set_youtube_live_title "$new_title"
 }
 
 main "$@"
