@@ -203,7 +203,7 @@ set_twitch_topic() {
 	local topic out rc body
 	topic="$1"
 	topic="${topic:0:140}"
-	body="$(jq -cn --arg topic "$topic" '{topic:$topic}')"
+	body="$(jq -cn --arg topic "$topic" '{title:$topic}')"
 
 	set +e
 	out="$(
