@@ -1,4 +1,4 @@
-# Simple OBS Overlay
+# 🟥 Simple Current Topic OBS Overlay
 
 Vibe coded simple OBS browser overlay. I use this because I am frequently changing the title of the stream based on topic and make recordings to be uploaded.
 

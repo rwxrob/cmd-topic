@@ -291,7 +291,7 @@ set_youtube_live_topic() {
 				.items[0]
 				| {
 					id,
-					snippet: (.snippet + {topic: $topic})
+					snippet: (.snippet + {title: $topic})
 				}
 			'
 	)"
