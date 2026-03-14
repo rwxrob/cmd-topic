@@ -3,8 +3,8 @@ set -euo pipefail
 
 OBS_WS_URL="${OBS_WS_URL:-ws://127.0.0.1:4455}"
 OBS_WS_PASSWORD_FILE="${OBS_WS_PASSWORD_FILE:-$HOME/.config/obs-websocket/password}"
-TITLES_FILE="${TITLES_FILE:-${TITLES:-$HOME/.titles}}"
-LOG_PREFIX="${LOG_PREFIX:-obs-retitle}"
+TOPICS_FILE="${TOPICS_FILE:-${TOPICS:-$HOME/.topics}}"
+LOG_PREFIX="${LOG_PREFIX:-obs-retopic}"
 RECONNECT_DELAY="${RECONNECT_DELAY:-2}"
 
 need() {
@@ -58,7 +58,7 @@ slugify() {
 				-e 's/-$//'
 	)"
 
-	[[ -n "$s" ]] || s="untitled-recording"
+	[[ -n "$s" ]] || s="untopic-recording"
 	printf '%s\n' "$s"
 }
 
@@ -76,8 +76,8 @@ obs_auth_string() {
 	printf '%s%s' "$secret" "$challenge" | b64sha256
 }
 
-current_title() {
-	sed -n '1{s/\r$//;p;}' "$TITLES_FILE" 2>/dev/null || true
+current_topic() {
+	sed -n '1{s/\r$//;p;}' "$TOPICS_FILE" 2>/dev/null || true
 }
 
 sanitize_filename() {
@@ -99,12 +99,12 @@ sanitize_filename() {
 			-e 's/^[[:space:]]*//' \
 			-e 's/[[:space:]]*$//')"
 
-	[[ -n "$s" ]] || s="Untitled recording"
+	[[ -n "$s" ]] || s="Untopic recording"
 	printf '%s\n' "$s"
 }
 
 target_path_for() {
-	local src dir base ext title slug dest n
+	local src dir base ext topic slug dest n
 	src="$1"
 	dir="${src%/*}"
 	base="${src##*/}"
@@ -119,8 +119,8 @@ target_path_for() {
 		ext=""
 	fi
 
-	title="$(current_title)"
-	slug="$(slugify "$title")"
+	topic="$(current_topic)"
+	slug="$(slugify "$topic")"
 	dest="$dir/$slug$ext"
 
 	if [[ "$dest" == "$src" ]]; then

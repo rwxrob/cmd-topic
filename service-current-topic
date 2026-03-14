@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-titles="${TITLES:-$HOME/.titles}"
+topics="${TOPIC:-$HOME/.topics}"
 port="${PORT:-8080}"
 
 need() {
@@ -21,15 +21,15 @@ while :; do
 		[[ "$line" == $'\r' || -z "$line" ]] && break
 	done
 
-	title="$(sed -n '1{s/\r$//;p;}' "$titles" 2>/dev/null || true)"
-	title="$(toemoji <<<"$title")"
+	topic="$(sed -n '1{s/\r$//;p;}' "$topics" 2>/dev/null || true)"
+	topic="$(toemoji <<<"$topic")"
 
 	printf 'HTTP/1.1 200 OK\r\n' >&"${NETCAT[1]}"
 	printf 'Content-Type: text/plain; charset=utf-8\r\n' >&"${NETCAT[1]}"
 	printf 'Cache-Control: no-cache\r\n' >&"${NETCAT[1]}"
 	printf 'Access-Control-Allow-Origin: *\r\n' >&"${NETCAT[1]}"
 	printf '\r\n' >&"${NETCAT[1]}"
-	printf '%s\n' "$title" >&"${NETCAT[1]}"
+	printf '%s\n' "$topic" >&"${NETCAT[1]}"
 
 	eval "exec ${NETCAT[1]}>&-"
 	eval "exec ${NETCAT[0]}<&-"

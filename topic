@@ -13,11 +13,11 @@ youtube_token_file() {
 usage() {
 	cat <<'EOF'
 Usage:
-  retitle <new title words...>
-  retitle <issue-number>
+  topic <new topic words...>
+  topic <issue-number>
 
 Environment:
-  TITLES                  Path to titles history file (default: ~/.titles)
+  TOPICS                  Path to topics history file (default: ~/.topics)
   TWITCH_BROADCASTER_ID   Twitch broadcaster id
 
   YOUTUBE_BROADCAST_ID    Optional explicit live broadcast id
@@ -30,11 +30,11 @@ Environment:
 
 Notes:
   When given a single number, this script assumes the current
-  directory is a git repo and uses gh to look up that issue title.
+  directory is a git repo and uses gh to look up that issue topic.
 
-  The titles file keeps:
-    line 1 = current title
-    line 2 = previous title
+  The topics file keeps:
+    line 1 = current topic
+    line 2 = previous topic
 EOF
 	exit "${1:-0}"
 }
@@ -122,21 +122,21 @@ github_issue_emoji() {
 	printf ':gear:\n'
 }
 
-github_issue_title() {
+github_issue_topic() {
 	local issue out
 	issue="$1"
 
 	git rev-parse --is-inside-work-tree >/dev/null 2>&1 ||
 		die 'current directory is not inside a git repo'
 
-	out="$(gh issue view "$issue" --json title --jq .title 2>/dev/null)" ||
+	out="$(gh issue view "$issue" --json topic --jq .topic 2>/dev/null)" ||
 		die "could not get issue #$issue from current repo"
 
-	[[ -n "$out" ]] || die "issue #$issue has no title"
+	[[ -n "$out" ]] || die "issue #$issue has no topic"
 	printf '%s\n' "$out"
 }
 
-load_titles() {
+load_topics() {
 	local file dir
 	file="$1"
 	dir="${file%/*}"
@@ -145,11 +145,11 @@ load_titles() {
 	mkdir -p "$dir"
 	[[ -f "$file" ]] || : >"$file"
 
-	current_title="$(sed -n '1p' "$file")"
-	prev_title="$(sed -n '2p' "$file")"
+	current_topic="$(sed -n '1p' "$file")"
+	prev_topic="$(sed -n '2p' "$file")"
 }
 
-save_titles() {
+save_topics() {
 	local file new prev tmp
 	file="$1"
 	new="$2"
@@ -197,13 +197,13 @@ mutation($emoji:String!, $message:String!) {
 		-f message="$message" >/dev/null
 }
 
-set_twitch_title() {
+set_twitch_topic() {
 	: "${TWITCH_BROADCASTER_ID:?missing TWITCH_BROADCASTER_ID}"
 
-	local title out rc body
-	title="$1"
-	title="${title:0:140}"
-	body="$(jq -cn --arg title "$title" '{title:$title}')"
+	local topic out rc body
+	topic="$1"
+	topic="${topic:0:140}"
+	body="$(jq -cn --arg topic "$topic" '{topic:$topic}')"
 
 	set +e
 	out="$(
@@ -215,7 +215,7 @@ set_twitch_title() {
 	rc=$?
 	set -e
 
-	[[ $rc != 204 ]] || die "twitch title update failed: $out"
+	[[ $rc != 204 ]] || die "twitch topic update failed: $out"
 }
 
 youtube_api() {
@@ -269,10 +269,10 @@ youtube_get_broadcast() {
 		"liveBroadcasts?part=id,snippet,status&id=$id"
 }
 
-set_youtube_live_title() {
+set_youtube_live_topic() {
 
-	local title_arg id json body preferred_status
-	title_arg="$1"
+	local topic_arg id json body preferred_status
+	topic_arg="$1"
 	preferred_status="${YOUTUBE_BROADCAST_STATUS:-active}"
 
 	if [[ -n "${YOUTUBE_BROADCAST_ID:-}" ]]; then
@@ -287,11 +287,11 @@ set_youtube_live_title() {
 		die "could not fetch YouTube broadcast $id"
 	body="$(
 		printf '%s\n' "$json" |
-			jq -c --arg title "$title_arg" '
+			jq -c --arg topic "$topic_arg" '
 				.items[0]
 				| {
 					id,
-					snippet: (.snippet + {title: $title})
+					snippet: (.snippet + {topic: $topic})
 				}
 			'
 	)"
@@ -303,11 +303,11 @@ set_youtube_live_title() {
 		'liveBroadcasts?part=snippet' \
 		-H 'Content-Type: application/json' \
 		--data "$body" >/dev/null ||
-		die "could not update the youtube title"
+		die "could not update the youtube topic"
 }
 
 main() {
-	local titles_file new_title
+	local topics_file new_topic
 
 	[[ $# -gt 0 ]] || usage 1
 
@@ -316,33 +316,33 @@ main() {
 	need jq
 	need curl
 
-	titles_file="${TITLES:-$HOME/.titles}"
+	topics_file="${TOPICS:-$HOME/.topics}"
 
-	load_titles "$titles_file"
+	load_topics "$topics_file"
 
 	if [[ $# -eq 1 && "$1" == "-" ]]; then
-		[[ -n "$prev_title" ]] || die 'no previous title to toggle to'
+		[[ -n "$prev_topic" ]] || die 'no previous topic to toggle to'
 
-		new_title="$prev_title"
-		save_titles "$titles_file" "$prev_title" "$current_title"
+		new_topic="$prev_topic"
+		save_topics "$topics_file" "$prev_topic" "$current_topic"
 
 	elif [[ $# -eq 1 && "$1" =~ ^[0-9]+$ ]]; then
-		issue_title="$(github_issue_title "$1")"
+		issue_topic="$(github_issue_topic "$1")"
 		issue_emoji="$(github_issue_emoji "$1")"
-		new_title="$issue_emoji $issue_title"
+		new_topic="$issue_emoji $issue_topic"
 	else
-		new_title="$*"
+		new_topic="$*"
 	fi
 
-	if [[ "$new_title" == "$current_title" ]]; then
+	if [[ "$new_topic" == "$current_topic" ]]; then
 		echo "Title already set"
 		exit 0
 	fi
 
-	save_titles "$titles_file" "$new_title" "$current_title"
-	set_github_status "$new_title"
-	set_twitch_title "$new_title"
-	set_youtube_live_title "$new_title"
+	save_topics "$topics_file" "$new_topic" "$current_topic"
+	set_github_status "$new_topic"
+	set_twitch_topic "$new_topic"
+	set_youtube_live_topic "$new_topic"
 }
 
 main "$@"
