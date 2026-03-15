@@ -343,6 +343,7 @@ main() {
 	set_github_status "$new_topic"
 	set_twitch_topic "$new_topic"
 	set_youtube_live_topic "$new_topic"
+	head -1 "$topics_file"
 }
 
 main "$@"
