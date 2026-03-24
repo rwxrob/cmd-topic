@@ -3,7 +3,7 @@ set -euo pipefail
 
 topics="${TOPIC:-$HOME/.topics}"
 port="${PORT:-8080}"
-twitch_poll="${TWITCH_POLL:-60}"
+twitch_poll="${TWITCH_POLL:-20}"
 
 need() {
 	command -v "$1" >/dev/null 2>&1 || {
