@@ -36,7 +36,7 @@ _twitch_poller() {
 		current="$(sed -n '1p' "$topics" 2>/dev/null || true)"
 		[[ "$title" != "$current" ]] || continue
 
-		topic "$title"
+		topic "$title" >/dev/null
 	done
 }
 
