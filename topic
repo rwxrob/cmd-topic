@@ -255,7 +255,7 @@ set_restream_topic() {
 		restream_api PATCH "user/channel-meta/$channel_id" \
 			-H 'Content-Type: application/json' \
 			--data "$(jq -cn --arg title "$topic" '{title:$title}')" >/dev/null || true
-	done < <(jq -r '.[] | select(.active == true) | .id' <<<"$channels")
+	done < <(jq -r '.[].id' <<<"$channels")
 }
 
 youtube_api() {
