@@ -13,6 +13,7 @@ youtube_token_file() {
 usage() {
 	cat <<'EOF'
 Usage:
+  topic                   interactive menu to select from topic history
   topic <new topic words...>
   topic <issue-number>
 
@@ -32,9 +33,8 @@ Notes:
   When given a single number, this script assumes the current
   directory is a git repo and uses gh to look up that issue topic.
 
-  The topics file keeps:
-    line 1 = current topic
-    line 2 = previous topic
+  The topics file keeps all unique topics, most recent first.
+  Uses fzf for the interactive menu if available, otherwise select.
 EOF
 	exit "${1:-0}"
 }
@@ -150,15 +150,14 @@ load_topics() {
 }
 
 save_topics() {
-	local file new prev tmp
+	local file new tmp
 	file="$1"
 	new="$2"
-	prev="$3"
 	tmp="$(mktemp)"
 
 	{
 		printf '%s\n' "$new"
-		printf '%s\n' "$prev"
+		grep -vxF "$new" "$file" 2>/dev/null || true
 	} >"$tmp"
 
 	mv "$tmp" "$file"
@@ -309,8 +308,6 @@ set_youtube_live_topic() {
 main() {
 	local topics_file new_topic
 
-	[[ $# -gt 0 ]] || usage 1
-
 	need git
 	need gh
 	need jq
@@ -320,12 +317,21 @@ main() {
 
 	load_topics "$topics_file"
 
-	if [[ $# -eq 1 && "$1" == "-" ]]; then
+	if [[ $# -eq 0 ]]; then
+		[[ -s "$topics_file" ]] || die 'no topics history'
+		if have fzf; then
+			new_topic="$(fzf --prompt='topic> ' <"$topics_file")" || exit 0
+		else
+			mapfile -t _topics <"$topics_file"
+			PS3='Select topic: '
+			select new_topic in "${_topics[@]}"; do
+				[[ -n "$new_topic" ]] && break
+			done
+			[[ -n "$new_topic" ]] || exit 0
+		fi
+	elif [[ $# -eq 1 && "$1" == "-" ]]; then
 		[[ -n "$prev_topic" ]] || die 'no previous topic to toggle to'
-
 		new_topic="$prev_topic"
-		save_topics "$topics_file" "$prev_topic" "$current_topic"
-
 	elif [[ $# -eq 1 && "$1" =~ ^[0-9]+$ ]]; then
 		issue_topic="$(github_issue_topic "$1")"
 		issue_emoji="$(github_issue_emoji "$1")"
@@ -339,7 +345,7 @@ main() {
 		exit 0
 	fi
 
-	save_topics "$topics_file" "$new_topic" "$current_topic"
+	save_topics "$topics_file" "$new_topic"
 	set_github_status "$new_topic"
 	set_twitch_topic "$new_topic"
 	set_youtube_live_topic "$new_topic"
