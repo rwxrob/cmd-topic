@@ -53,6 +53,9 @@ client_secret="$(jq -r '.installed.client_secret // empty' "$client_secret_file"
 mkdir -p "$config_dir"
 chmod 700 "$config_dir"
 
+tmpdir=''
+trap '[[ -n "$tmpdir" ]] && rm -rf "$tmpdir"' EXIT
+
 save_token_json() {
 	local json access_token refresh_token expires_in now expires_at tmp
 	json="$1"
@@ -123,7 +126,7 @@ refresh_from_existing_token() {
 }
 
 authorize_new_refresh_token() {
-	local state auth_url open_cmd tmpdir request_file response_file listener_pid
+	local state auth_url open_cmd request_file response_file listener_pid
 	local request_line path_qs query code returned_state oauth_error token_json
 
 	state="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24 || true)"
@@ -140,7 +143,6 @@ authorize_new_refresh_token() {
 	fi
 
 	tmpdir="$(mktemp -d)"
-	trap 'rm -rf "$tmpdir"' EXIT
 
 	request_file="$tmpdir/request.txt"
 	response_file="$tmpdir/response.txt"
