@@ -146,7 +146,6 @@ load_topics() {
 	[[ -f "$file" ]] || : >"$file"
 
 	current_topic="$(sed -n '1p' "$file")"
-	prev_topic="$(sed -n '2p' "$file")"
 }
 
 save_topics() {
@@ -330,8 +329,8 @@ main() {
 			[[ -n "$new_topic" ]] || exit 0
 		fi
 	elif [[ $# -eq 1 && "$1" == "-" ]]; then
-		[[ -n "$prev_topic" ]] || die 'no previous topic to toggle to'
-		new_topic="$prev_topic"
+		new_topic="$(grep -vxF "$current_topic" "$topics_file" | head -1)"
+		[[ -n "$new_topic" ]] || die 'no previous topic to toggle to'
 	elif [[ $# -eq 1 && "$1" =~ ^[0-9]+$ ]]; then
 		issue_topic="$(github_issue_topic "$1")"
 		issue_emoji="$(github_issue_emoji "$1")"
