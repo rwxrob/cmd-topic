@@ -33,14 +33,10 @@ _twitch_poller() {
 
 		printf '%s\n' "$title" >"$_last_twitch_title_file"
 
-		prev="$(sed -n '2p' "$topics" 2>/dev/null || true)"
 		current="$(sed -n '1p' "$topics" 2>/dev/null || true)"
 		[[ "$title" != "$current" ]] || continue
 
-		tmp="$(mktemp)"
-		printf '%s\n' "$title" >"$tmp"
-		printf '%s\n' "$current" >>"$tmp"
-		mv "$tmp" "$topics"
+		topic "$title"
 	done
 }
 
