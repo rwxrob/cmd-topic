@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+die() {
+	printf 'Error: %s\n' "$*" >&2
+	exit 1
+}
+
+need() {
+	command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
+}
+
+first_cmd() {
+	local cmd
+	for cmd in "$@"; do
+		if command -v "$cmd" >/dev/null 2>&1; then
+			printf '%s\n' "$cmd"
+			return 0
+		fi
+	done
+	return 1
+}
+
+urlencode() {
+	jq -rn --arg v "$1" '$v|@uri'
+}
+
+urldecode() {
+	printf '%b' "${1//%/\\x}" | sed 's/+/ /g'
+}
+
+config_dir="${HOME}/.config/restream"
+client_secret_file="${config_dir}/client_secret.json"
+token_json_file="${RESTREAM_TOKEN_FILE:-${config_dir}/token.json}"
+port="${RESTREAM_LOOPBACK_PORT:-53683}"
+redirect_uri="http://127.0.0.1:${port}"
+
+need jq
+need curl
+need nc
+
+[[ -f "$client_secret_file" ]] ||
+	die "missing client secret file: $client_secret_file"
+
+client_id="$(jq -r '.client_id // empty' "$client_secret_file")"
+client_secret="$(jq -r '.client_secret // empty' "$client_secret_file")"
+
+[[ -n "$client_id" ]] || die "could not read .client_id from $client_secret_file"
+[[ -n "$client_secret" ]] || die "could not read .client_secret from $client_secret_file"
+
+mkdir -p "$config_dir"
+chmod 700 "$config_dir"
+
+save_token_json() {
+	local json access_token refresh_token expires_in now expires_at tmp
+	json="$1"
+
+	access_token="$(printf '%s\n' "$json" | jq -r '.access_token // empty')"
+	refresh_token="$(printf '%s\n' "$json" | jq -r '.refresh_token // empty')"
+	expires_in="$(printf '%s\n' "$json" | jq -r '.expires_in // 0')"
+
+	[[ -n "$access_token" ]] || {
+		printf '%s\n' "$json" >&2
+		die 'did not receive access_token from Restream'
+	}
+
+	if [[ -z "$refresh_token" && -f "$token_json_file" ]]; then
+		refresh_token="$(
+			jq -r '.refresh_token // empty' "$token_json_file" 2>/dev/null || true
+		)"
+	fi
+
+	now="$(date +%s)"
+	expires_at=$((now + expires_in))
+
+	tmp="$(mktemp)"
+	jq -n \
+		--arg access_token "$access_token" \
+		--arg refresh_token "$refresh_token" \
+		--argjson expires_at "$expires_at" \
+		'{
+			access_token: $access_token,
+			refresh_token: $refresh_token,
+			expires_at: $expires_at
+		}' >"$tmp"
+
+	mv "$tmp" "$token_json_file"
+	chmod 600 "$token_json_file"
+}
+
+refresh_from_existing_token() {
+	[[ -f "$token_json_file" ]] || return 1
+
+	local refresh_token token_json
+	refresh_token="$(
+		jq -r '.refresh_token // empty' "$token_json_file" 2>/dev/null || true
+	)"
+	[[ -n "$refresh_token" ]] || return 1
+
+	token_json="$(
+		curl --silent --show-error --fail \
+			-X POST 'https://api.restream.io/oauth/token' \
+			--user "$client_id:$client_secret" \
+			--data-urlencode 'grant_type=refresh_token' \
+			--data-urlencode "refresh_token=$refresh_token"
+	)" || return 1
+
+	save_token_json "$token_json"
+	return 0
+}
+
+authorize_new_refresh_token() {
+	local state auth_url open_cmd tmpdir request_file response_file listener_pid
+	local request_line path_qs query code returned_state oauth_error token_json
+
+	state="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24 || true)"
+	[[ -n "$state" ]] || state="state$$"
+
+	auth_url="https://api.restream.io/login?response_type=code&client_id=$(urlencode "$client_id")&redirect_uri=$(urlencode "$redirect_uri")&state=$(urlencode "$state")"
+
+	open_cmd="$(first_cmd open xdg-open || true)"
+
+	printf 'Open this URL if your browser does not open automatically:\n\n%s\n\n' "$auth_url"
+
+	if [[ -n "$open_cmd" ]]; then
+		"$open_cmd" "$auth_url" >/dev/null 2>&1 || true
+	fi
+
+	tmpdir="$(mktemp -d)"
+	trap 'rm -rf "$tmpdir"' EXIT
+
+	request_file="$tmpdir/request.txt"
+	response_file="$tmpdir/response.txt"
+
+	cat >"$response_file" <<'EOF'
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+Connection: close
+
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>You may close this window</title></head>
+<body style="font-family: sans-serif; padding: 2rem;">
+<h1>Authorization received</h1>
+<p>You can close this window and return to the terminal.</p>
+</body>
+</html>
+EOF
+
+	printf 'Waiting for Restream OAuth callback on %s ...\n' "$redirect_uri" >&2
+
+	(
+		while :; do
+			nc -l 127.0.0.1 "$port" <"$response_file" >"$request_file" && break
+		done
+	) &
+	listener_pid="$!"
+
+	for _ in $(seq 1 300); do
+		if [[ -s "$request_file" ]]; then
+			break
+		fi
+		sleep 1
+	done
+
+	kill "$listener_pid" >/dev/null 2>&1 || true
+	wait "$listener_pid" 2>/dev/null || true
+
+	[[ -s "$request_file" ]] || die "timed out waiting for OAuth callback"
+
+	request_line="$(head -n 1 "$request_file" | tr -d '\r')"
+	path_qs="${request_line#GET }"
+	path_qs="${path_qs%% HTTP/*}"
+
+	query="${path_qs#*\?}"
+	[[ "$query" != "$path_qs" ]] || die "callback did not contain a query string"
+
+	code="$(printf '%s\n' "$query" | tr '&' '\n' | sed -n 's/^code=//p' | head -n1)"
+	returned_state="$(printf '%s\n' "$query" | tr '&' '\n' | sed -n 's/^state=//p' | head -n1)"
+	oauth_error="$(printf '%s\n' "$query" | tr '&' '\n' | sed -n 's/^error=//p' | head -n1)"
+
+	code="$(urldecode "${code:-}")"
+	returned_state="$(urldecode "${returned_state:-}")"
+	oauth_error="$(urldecode "${oauth_error:-}")"
+
+	[[ -z "$oauth_error" ]] || die "OAuth error: $oauth_error"
+	[[ -n "$code" ]] || die "no authorization code received"
+	[[ "$returned_state" == "$state" ]] || die "state mismatch"
+
+	token_json="$(
+		curl --silent --show-error --fail \
+			-X POST 'https://api.restream.io/oauth/token' \
+			--user "$client_id:$client_secret" \
+			--data-urlencode 'grant_type=authorization_code' \
+			--data-urlencode "redirect_uri=$redirect_uri" \
+			--data-urlencode "code=$code"
+	)"
+
+	save_token_json "$token_json"
+}
+
+if ! refresh_from_existing_token; then
+	printf 'No usable refresh token found. Starting browser authorization...\n' >&2
+	authorize_new_refresh_token
+fi

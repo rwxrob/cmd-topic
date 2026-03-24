@@ -10,6 +10,10 @@ youtube_token_file() {
 	printf '%s\n' "${YOUTUBE_TOKEN_FILE:-$HOME/.config/youtube/token.json}"
 }
 
+restream_token_file() {
+	printf '%s\n' "${RESTREAM_TOKEN_FILE:-$HOME/.config/restream/token.json}"
+}
+
 usage() {
 	cat <<'EOF'
 Usage:
@@ -216,6 +220,44 @@ set_twitch_topic() {
 	[[ $rc != 204 ]] || die "twitch topic update failed: $out"
 }
 
+restream_api() {
+	local method endpoint
+	method="$1"
+	endpoint="$2"
+	shift 2
+
+	cache-restream-token
+	local token_file access_token
+	token_file="$(restream_token_file)"
+	access_token="$(jq -r .access_token "$token_file")"
+
+	[[ -n "$access_token" ]] || {
+		printf 'failed to get access_token from %s\n' "$token_file" >&2
+		return 1
+	}
+
+	curl --silent --show-error --fail \
+		-X "$method" \
+		-H "Authorization: Bearer $access_token" \
+		-H 'Accept: application/json' \
+		"$@" \
+		"https://api.restream.io/v2/$endpoint"
+}
+
+set_restream_topic() {
+	local topic channels channel_id
+	topic="$1"
+
+	channels="$(restream_api GET 'user/channel/all')" || return 1
+
+	while IFS= read -r channel_id; do
+		[[ -n "$channel_id" ]] || continue
+		restream_api PATCH "user/channel-meta/$channel_id" \
+			-H 'Content-Type: application/json' \
+			--data "$(jq -cn --arg title "$topic" '{title:$title}')" >/dev/null || true
+	done < <(jq -r '.[] | select(.active == true) | .id' <<<"$channels")
+}
+
 youtube_api() {
 	local method endpoint
 	method="$1"
@@ -347,6 +389,7 @@ main() {
 	save_topics "$topics_file" "$new_topic"
 	set_github_status "$new_topic"
 	set_twitch_topic "$new_topic"
+	set_restream_topic "$new_topic"
 	set_youtube_live_topic "$new_topic"
 	_have() { type "$1" &>/dev/null; }
 	current=$(head -1 "$topics_file")
