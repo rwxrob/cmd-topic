@@ -391,10 +391,7 @@ main() {
 	set_twitch_topic "$new_topic"
 	set_restream_topic "$new_topic"
 	set_youtube_live_topic "$new_topic"
-	_have() { type "$1" &>/dev/null; }
-	current=$(head -1 "$topics_file")
-	_have pbcopy && pbcopy <<<"$current"
-	echo "$current"
+	head -1 "$topics_file"
 }
 
 main "$@"
