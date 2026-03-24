@@ -3,6 +3,7 @@ set -euo pipefail
 
 topics="${TOPIC:-$HOME/.topics}"
 port="${PORT:-8080}"
+twitch_poll="${TWITCH_POLL:-60}"
 
 need() {
 	command -v "$1" >/dev/null 2>&1 || {
@@ -12,6 +13,40 @@ need() {
 }
 
 need nc
+
+_last_twitch_title_file="/tmp/service-current-topic-last-twitch-$$"
+
+_twitch_poller() {
+	while :; do
+		sleep "$twitch_poll"
+		[[ -n "${TWITCH_BROADCASTER_ID:-}" ]] || continue
+		command -v twitch >/dev/null 2>&1 || continue
+		command -v jq >/dev/null 2>&1 || continue
+
+		title="$(twitch api get channels \
+			-q "broadcaster_id=$TWITCH_BROADCASTER_ID" 2>/dev/null \
+			| jq -r '.data[0].title // empty' 2>/dev/null)" || continue
+		[[ -n "$title" ]] || continue
+
+		last="$(cat "$_last_twitch_title_file" 2>/dev/null || true)"
+		[[ "$title" != "$last" ]] || continue
+
+		printf '%s\n' "$title" >"$_last_twitch_title_file"
+
+		prev="$(sed -n '2p' "$topics" 2>/dev/null || true)"
+		current="$(sed -n '1p' "$topics" 2>/dev/null || true)"
+		[[ "$title" != "$current" ]] || continue
+
+		tmp="$(mktemp)"
+		printf '%s\n' "$title" >"$tmp"
+		printf '%s\n' "$current" >>"$tmp"
+		mv "$tmp" "$topics"
+	done
+}
+
+_twitch_poller &
+_twitch_poller_pid=$!
+trap 'kill "$_twitch_poller_pid" 2>/dev/null; rm -f "$_last_twitch_title_file"' EXIT
 
 while :; do
 	coproc NETCAT { nc -l "$port"; }
