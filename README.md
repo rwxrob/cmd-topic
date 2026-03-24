@@ -68,8 +68,8 @@ and GitHub user status.
 ### service-current-topic
 
 Serves the current topic as plain text on port 8080 (override with `PORT`).
-Also polls the Twitch stream title every 20 seconds (`TWITCH_POLL` to
-override) and updates `~/.topics` when it changes.
+Also subscribes to Twitch EventSub `channel.update` via WebSocket and
+calls `topic` when the title changes, propagating it to all platforms.
 
 Requires `TWITCH_BROADCASTER_ID` for Twitch polling.
 
@@ -88,7 +88,6 @@ Reads password from `~/.config/obs-websocket/password`
 |----------|---------|-------------|
 | `TOPICS` | `~/.topics` | Path to topics history file |
 | `PORT` | `8080` | Port for `service-current-topic` |
-| `TWITCH_POLL` | `20` | Twitch title poll interval (seconds) |
 | `TWITCH_BROADCASTER_ID` | (required) | Your Twitch broadcaster ID |
 | `YOUTUBE_BROADCAST_ID` | (auto-detected) | Override YouTube broadcast ID |
 | `YOUTUBE_BROADCAST_STATUS` | `active` | Broadcast lifecycle status to prefer |

@@ -3,7 +3,6 @@ set -euo pipefail
 
 topics="${TOPIC:-$HOME/.topics}"
 port="${PORT:-8080}"
-twitch_poll="${TWITCH_POLL:-20}"
 
 need() {
 	command -v "$1" >/dev/null 2>&1 || {
@@ -14,35 +13,59 @@ need() {
 
 need nc
 
-_last_twitch_title_file="/tmp/service-current-topic-last-twitch-$$"
+_twitch_eventsub() {
+	local session_id title current line welcome
 
-_twitch_poller() {
 	while :; do
-		sleep "$twitch_poll"
-		[[ -n "${TWITCH_BROADCASTER_ID:-}" ]] || continue
-		command -v twitch >/dev/null 2>&1 || continue
-		command -v jq >/dev/null 2>&1 || continue
+		[[ -n "${TWITCH_BROADCASTER_ID:-}" ]] || { sleep 5; continue; }
+		command -v websocat >/dev/null 2>&1 || { sleep 5; continue; }
+		command -v jq >/dev/null 2>&1 || { sleep 5; continue; }
+		command -v twitch >/dev/null 2>&1 || { sleep 5; continue; }
 
-		title="$(twitch api get channels \
-			-q "broadcaster_id=$TWITCH_BROADCASTER_ID" 2>/dev/null \
-			| jq -r '.data[0].title // empty' 2>/dev/null)" || continue
-		[[ -n "$title" ]] || continue
+		coproc WS { websocat --text --no-close 'wss://eventsub.wss.twitch.tv/ws'; }
 
-		last="$(cat "$_last_twitch_title_file" 2>/dev/null || true)"
-		[[ "$title" != "$last" ]] || continue
+		IFS= read -r -u "${WS[0]}" welcome || {
+			eval "exec ${WS[1]}>&-" 2>/dev/null
+			sleep 2; continue
+		}
 
-		printf '%s\n' "$title" >"$_last_twitch_title_file"
+		session_id="$(jq -r '.payload.session.id // empty' <<<"$welcome")"
+		[[ -n "$session_id" ]] || {
+			eval "exec ${WS[1]}>&-" 2>/dev/null
+			sleep 2; continue
+		}
 
-		current="$(sed -n '1p' "$topics" 2>/dev/null || true)"
-		[[ "$title" != "$current" ]] || continue
+		twitch api post eventsub/subscriptions -b "$(jq -cn \
+			--arg bid "$TWITCH_BROADCASTER_ID" \
+			--arg sid "$session_id" \
+			'{type:"channel.update",version:"2",condition:{broadcaster_user_id:$bid},transport:{method:"websocket",session_id:$sid}}'
+		)" >/dev/null 2>&1 || {
+			eval "exec ${WS[1]}>&-" 2>/dev/null
+			sleep 2; continue
+		}
 
-		topic "$title" >/dev/null
+		while IFS= read -r -u "${WS[0]}" line; do
+			[[ -n "$line" ]] || continue
+			[[ "$(jq -r '.metadata.message_type // empty' <<<"$line")" == "notification" ]] || continue
+			[[ "$(jq -r '.metadata.subscription_type // empty' <<<"$line")" == "channel.update" ]] || continue
+
+			title="$(jq -r '.payload.event.title // empty' <<<"$line")"
+			[[ -n "$title" ]] || continue
+
+			current="$(sed -n '1p' "$topics" 2>/dev/null || true)"
+			[[ "$title" != "$current" ]] || continue
+
+			topic "$title" >/dev/null
+		done
+
+		eval "exec ${WS[1]}>&-" 2>/dev/null
+		sleep 2
 	done
 }
 
-_twitch_poller &
-_twitch_poller_pid=$!
-trap 'kill "$_twitch_poller_pid" 2>/dev/null; rm -f "$_last_twitch_title_file"' EXIT
+_twitch_eventsub &
+_twitch_eventsub_pid=$!
+trap 'kill "$_twitch_eventsub_pid" 2>/dev/null' EXIT
 
 while :; do
 	coproc NETCAT { nc -l "$port"; }
