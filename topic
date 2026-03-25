@@ -390,11 +390,17 @@ main() {
 			new_topic="$(fzf --prompt='topic> ' <"$topics_file")" || exit 0
 		else
 			mapfile -t _topics <"$topics_file"
-			PS3='Select topic: '
-			select new_topic in "${_topics[@]}"; do
-				[[ -n "$new_topic" ]] && break
-			done
-			[[ -n "$new_topic" ]] || exit 0
+			local i width choice
+			width="${#_topics[@]}"
+			width="${#width}"
+			for ((i = 0; i < ${#_topics[@]}; i++)); do
+				printf "%${width}d) %s\n" "$((i + 1))" "${_topics[$i]}"
+			done >&2
+			printf 'Select topic: ' >&2
+			read -r choice
+			[[ "$choice" =~ ^[0-9]+$ ]] || exit 0
+			((choice >= 1 && choice <= ${#_topics[@]})) || exit 0
+			new_topic="${_topics[$((choice - 1))]}"
 		fi
 	elif [[ $# -eq 1 && "$1" == "-" ]]; then
 		new_topic="$(grep -vxF "$current_topic" "$topics_file" | head -1)"
