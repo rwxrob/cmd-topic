@@ -19,6 +19,7 @@ Quick start:
 
 ## Requirements
 
+- [`fzf`](https://github.com/junegunn/fzf) — interactive topic menu
 - [`twitch` CLI](https://github.com/twitchdev/twitch-cli)
 - [`gh`](https://cli.github.com) authenticated with `gh auth login`
 - [`websocat`](https://github.com/vi/websocat)

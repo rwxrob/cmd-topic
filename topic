@@ -38,7 +38,7 @@ Notes:
   directory is a git repo and uses gh to look up that issue topic.
 
   The topics file keeps all unique topics, most recent first.
-  Uses fzf for the interactive menu if available, otherwise select.
+  Requires fzf for the interactive menu (brew install fzf).
 EOF
 	exit "${1:-0}"
 }
@@ -47,9 +47,6 @@ need() {
 	command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
 }
 
-have() {
-	command -v "$1" >/dev/null 2>&1
-}
 
 github_issue_emoji() {
 	local issue labels
@@ -385,23 +382,9 @@ main() {
 	load_topics "$topics_file"
 
 	if [[ $# -eq 0 ]]; then
+		need fzf
 		[[ -s "$topics_file" ]] || die 'no topics history'
-		if have fzf; then
-			new_topic="$(fzf --prompt='topic> ' <"$topics_file")" || exit 0
-		else
-			mapfile -t _topics <"$topics_file"
-			local i width choice
-			width="${#_topics[@]}"
-			width="${#width}"
-			for ((i = 0; i < ${#_topics[@]}; i++)); do
-				printf "%${width}d) %s\n" "$((i + 1))" "${_topics[$i]}"
-			done >&2
-			printf 'Select topic: ' >&2
-			read -r choice
-			[[ "$choice" =~ ^[0-9]+$ ]] || exit 0
-			((choice >= 1 && choice <= ${#_topics[@]})) || exit 0
-			new_topic="${_topics[$((choice - 1))]}"
-		fi
+		new_topic="$(fzf --prompt='topic> ' <"$topics_file")" || exit 0
 	elif [[ $# -eq 1 && "$1" == "-" ]]; then
 		new_topic="$(grep -vxF "$current_topic" "$topics_file" | head -1)"
 		[[ -n "$new_topic" ]] || die 'no previous topic to toggle to'
