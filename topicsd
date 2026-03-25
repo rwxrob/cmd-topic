@@ -1,0 +1,306 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+topics="${TOPICS:-${TOPIC:-$HOME/.topics}}"
+port="${PORT:-8080}"
+obs_ws_url="${OBS_WS_URL:-ws://127.0.0.1:4455}"
+obs_ws_password_file="${OBS_WS_PASSWORD_FILE:-$HOME/.config/obs-websocket/password}"
+obs_reconnect_delay="${RECONNECT_DELAY:-2}"
+log_prefix="${LOG_PREFIX:-topic-service}"
+
+need() {
+	command -v "$1" >/dev/null 2>&1 || {
+		printf '%s: missing command: %s\n' "$log_prefix" "$1" >&2
+		exit 1
+	}
+}
+
+log() {
+	printf '%s: %s\n' "$log_prefix" "$*" >&2
+}
+
+# --- OBS recording rename ---------------------------------------------------
+
+trim_cr() {
+	sed 's/\r$//'
+}
+
+load_password() {
+	if [[ -f "$obs_ws_password_file" ]]; then
+		OBS_WS_PASSWORD="$(tr -d '\r\n' <"$obs_ws_password_file")"
+	else
+		OBS_WS_PASSWORD=""
+	fi
+}
+
+strip_leading_emoji() {
+	local s="$1"
+
+	case "$s" in
+	:[A-Za-z0-9_+-]*:[[:space:]]*)
+		s="${s#*:}"
+		s="${s#*:}"
+		s="${s## }"
+		;;
+	esac
+
+	printf '%s\n' "$s"
+}
+
+slugify() {
+	local s
+	s="$(strip_leading_emoji "$1")"
+
+	s="$(
+		printf '%s' "$s" |
+			tr '[:upper:]' '[:lower:]' |
+			sed \
+				-e 's/[^a-z0-9]/-/g' \
+				-e 's/-\{2,\}/-/g' \
+				-e 's/^-//' \
+				-e 's/-$//'
+	)"
+
+	[[ -n "$s" ]] || s="untopic-recording"
+	printf '%s\n' "$s"
+}
+
+b64sha256() {
+	openssl dgst -binary -sha256 | openssl base64 -A
+}
+
+obs_auth_string() {
+	local password salt challenge secret
+	password="$1"
+	salt="$2"
+	challenge="$3"
+
+	secret="$(printf '%s%s' "$password" "$salt" | b64sha256)"
+	printf '%s%s' "$secret" "$challenge" | b64sha256
+}
+
+current_topic() {
+	sed -n '1{s/\r$//;p;}' "$topics" 2>/dev/null || true
+}
+
+sanitize_filename() {
+	local s
+	s="$1"
+	s="${s//\//-}"
+	s="${s//:/ -}"
+	s="$(printf '%s' "$s" |
+		tr '\n' ' ' |
+		sed \
+			-e 's/[[:cntrl:]]//g' \
+			-e 's/[[:space:]]\+/ /g' \
+			-e 's/^[[:space:]]*//' \
+			-e 's/[[:space:]]*$//')"
+
+	[[ -n "$s" ]] || s="Untopic recording"
+	printf '%s\n' "$s"
+}
+
+target_path_for() {
+	local src dir base ext topic slug dest n
+	src="$1"
+	dir="${src%/*}"
+	base="${src##*/}"
+
+	[[ "$src" != "$dir" ]] || dir="."
+
+	if [[ "$base" == *.* ]]; then
+		ext=".${base##*.}"
+	else
+		ext=""
+	fi
+
+	topic="$(current_topic)"
+	slug="$(slugify "$topic")"
+	dest="$dir/$slug$ext"
+
+	[[ "$dest" != "$src" ]] || { printf '%s\n' "$dest"; return 0; }
+	[[ -e "$dest" ]] || { printf '%s\n' "$dest"; return 0; }
+
+	n=2
+	while [[ -e "$dir/$slug-$n$ext" ]]; do
+		n=$((n + 1))
+	done
+	printf '%s\n' "$dir/$slug-$n$ext"
+}
+
+rename_recording() {
+	local src dest
+	src="$1"
+
+	[[ -n "$src" && "$src" != "null" ]] || return 0
+	[[ -e "$src" ]] || { log "recording file not found: $src"; return 0; }
+
+	dest="$(target_path_for "$src")"
+
+	if [[ "$dest" == "$src" ]]; then
+		log "already named correctly: $src"
+		return 0
+	fi
+
+	mv -- "$src" "$dest"
+	log "renamed:"
+	log "  from: $src"
+	log "    to: $dest"
+}
+
+obs_connect_and_watch() {
+	local hello salt challenge auth identify line event_type output_path
+
+	load_password
+
+	coproc OBSWS { websocat --text --no-close "$obs_ws_url"; }
+
+	IFS= read -r -u "${OBSWS[0]}" hello || {
+		log "failed to read Hello from OBS"
+		return 1
+	}
+	hello="$(printf '%s' "$hello" | trim_cr)"
+
+	challenge="$(jq -r '.d.authentication.challenge // empty' <<<"$hello")"
+	salt="$(jq -r '.d.authentication.salt // empty' <<<"$hello")"
+
+	if [[ -n "$challenge" || -n "$salt" ]]; then
+		[[ -n "$OBS_WS_PASSWORD" ]] || {
+			log "OBS requires auth, but password file is empty: $obs_ws_password_file"
+			return 1
+		}
+		auth="$(obs_auth_string "$OBS_WS_PASSWORD" "$salt" "$challenge")"
+		identify="$(jq -cn --arg auth "$auth" \
+			'{op:1,d:{rpcVersion:1,authentication:$auth,eventSubscriptions:64}}')"
+	else
+		identify="$(jq -cn '{op:1,d:{rpcVersion:1,eventSubscriptions:64}}')"
+	fi
+
+	printf '%s\n' "$identify" >&"${OBSWS[1]}"
+
+	IFS= read -r -u "${OBSWS[0]}" line || {
+		log "failed to read Identified from OBS"
+		return 1
+	}
+	line="$(printf '%s' "$line" | trim_cr)"
+
+	if [[ "$(jq -r '.op // empty' <<<"$line")" != "2" ]]; then
+		log "unexpected identify response: $line"
+		return 1
+	fi
+
+	log "connected to OBS at $obs_ws_url"
+
+	while IFS= read -r -u "${OBSWS[0]}" line; do
+		line="$(printf '%s' "$line" | trim_cr)"
+		[[ -n "$line" ]] || continue
+		[[ "$(jq -r '.op // empty' <<<"$line")" == "5" ]] || continue
+
+		event_type="$(jq -r '.d.eventType // empty' <<<"$line")"
+		[[ "$event_type" == "RecordStateChanged" ]] || continue
+
+		output_path="$(jq -r '.d.eventData.outputPath // empty' <<<"$line")"
+		[[ -n "$output_path" ]] || continue
+
+		rename_recording "$output_path"
+	done
+
+	return 1
+}
+
+_obs_watcher() {
+	while :; do
+		command -v websocat >/dev/null 2>&1 || { sleep 5; continue; }
+		command -v jq >/dev/null 2>&1 || { sleep 5; continue; }
+		command -v openssl >/dev/null 2>&1 || { sleep 5; continue; }
+
+		if ! obs_connect_and_watch; then
+			log "disconnected; reconnecting in ${obs_reconnect_delay}s"
+			sleep "$obs_reconnect_delay"
+		fi
+	done
+}
+
+# --- Twitch EventSub --------------------------------------------------------
+
+_twitch_eventsub() {
+	local session_id title current line welcome
+
+	while :; do
+		[[ -n "${TWITCH_BROADCASTER_ID:-}" ]] || { sleep 5; continue; }
+		command -v websocat >/dev/null 2>&1 || { sleep 5; continue; }
+		command -v jq >/dev/null 2>&1 || { sleep 5; continue; }
+		command -v twitch >/dev/null 2>&1 || { sleep 5; continue; }
+
+		coproc WS { websocat --text --no-close 'wss://eventsub.wss.twitch.tv/ws'; }
+
+		IFS= read -r -u "${WS[0]}" welcome || {
+			eval "exec ${WS[1]}>&-" 2>/dev/null
+			sleep 2; continue
+		}
+
+		session_id="$(jq -r '.payload.session.id // empty' <<<"$welcome")"
+		[[ -n "$session_id" ]] || {
+			eval "exec ${WS[1]}>&-" 2>/dev/null
+			sleep 2; continue
+		}
+
+		twitch api post eventsub/subscriptions -b "$(jq -cn \
+			--arg bid "$TWITCH_BROADCASTER_ID" \
+			--arg sid "$session_id" \
+			'{type:"channel.update",version:"2",condition:{broadcaster_user_id:$bid},transport:{method:"websocket",session_id:$sid}}'
+		)" >/dev/null 2>&1 || {
+			eval "exec ${WS[1]}>&-" 2>/dev/null
+			sleep 2; continue
+		}
+
+		while IFS= read -r -u "${WS[0]}" line; do
+			[[ -n "$line" ]] || continue
+			[[ "$(jq -r '.metadata.message_type // empty' <<<"$line")" == "notification" ]] || continue
+			[[ "$(jq -r '.metadata.subscription_type // empty' <<<"$line")" == "channel.update" ]] || continue
+
+			title="$(jq -r '.payload.event.title // empty' <<<"$line")"
+			[[ -n "$title" ]] || continue
+
+			current="$(sed -n '1p' "$topics" 2>/dev/null || true)"
+			[[ "$title" != "$current" ]] || continue
+
+			topic "$title" >/dev/null
+		done
+
+		eval "exec ${WS[1]}>&-" 2>/dev/null
+		sleep 2
+	done
+}
+
+# --- Main -------------------------------------------------------------------
+
+need nc
+
+_twitch_eventsub &
+_eventsub_pid=$!
+_obs_watcher &
+_obs_pid=$!
+trap 'kill "$_eventsub_pid" "$_obs_pid" 2>/dev/null' EXIT
+
+while :; do
+	coproc NETCAT { nc -l "$port"; }
+
+	while IFS= read -r -u "${NETCAT[0]}" line; do
+		[[ "$line" == $'\r' || -z "$line" ]] && break
+	done
+
+	topic="$(sed -n '1{s/\r$//;p;}' "$topics" 2>/dev/null || true)"
+	topic="$(toemoji <<<"$topic")"
+
+	printf 'HTTP/1.1 200 OK\r\n' >&"${NETCAT[1]}"
+	printf 'Content-Type: text/plain; charset=utf-8\r\n' >&"${NETCAT[1]}"
+	printf 'Cache-Control: no-cache\r\n' >&"${NETCAT[1]}"
+	printf 'Access-Control-Allow-Origin: *\r\n' >&"${NETCAT[1]}"
+	printf '\r\n' >&"${NETCAT[1]}"
+	printf '%s\n' "$topic" >&"${NETCAT[1]}"
+
+	eval "exec ${NETCAT[1]}>&-"
+	eval "exec ${NETCAT[0]}<&-"
+	wait "$NETCAT_PID" 2>/dev/null || true
+done
