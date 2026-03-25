@@ -199,6 +199,32 @@ mutation($emoji:String!, $message:String!) {
 		-f message="$message" >/dev/null
 }
 
+set_twitch_category() {
+	local topic categories_file pattern category game_id
+	topic="$1"
+	categories_file="${TWITCH_CATEGORIES_FILE:-$HOME/.config/twitch/categories}"
+
+	[[ -f "$categories_file" ]] || return 0
+	[[ -n "${TWITCH_BROADCASTER_ID:-}" ]] || return 0
+	command -v twitch >/dev/null 2>&1 || return 0
+
+	while IFS=$'\t' read -r pattern category; do
+		[[ -n "$pattern" && "${pattern:0:1}" != '#' ]] || continue
+		[[ -n "$category" ]] || continue
+		[[ "${topic,,}" =~ $pattern ]] || continue
+
+		game_id="$(twitch api get games \
+			-q "name=$category" 2>/dev/null \
+			| jq -r '.data[0].id // empty')" || continue
+		[[ -n "$game_id" ]] || continue
+
+		twitch api patch channels \
+			-q "broadcaster_id=$TWITCH_BROADCASTER_ID" \
+			-b "$(jq -cn --arg id "$game_id" '{game_id:$id}')" >/dev/null 2>&1 || true
+		return 0
+	done <"$categories_file"
+}
+
 set_twitch_topic() {
 	: "${TWITCH_BROADCASTER_ID:?missing TWITCH_BROADCASTER_ID}"
 
@@ -389,6 +415,7 @@ main() {
 	save_topics "$topics_file" "$new_topic"
 	set_github_status "$new_topic"
 	set_twitch_topic "$new_topic"
+	set_twitch_category "$new_topic"
 	set_restream_topic "$new_topic"
 	set_youtube_live_topic "$new_topic"
 	head -1 "$topics_file"

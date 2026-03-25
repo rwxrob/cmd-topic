@@ -1,0 +1,12 @@
+# Twitch category mappings
+# Copy to ~/.config/twitch/categories (override with TWITCH_CATEGORIES_FILE)
+# Format: regex<TAB>Twitch Category Name
+# Patterns match case-insensitively against the full topic title
+# First match wins
+#
+bike|road	IRL
+writ	Writing
+coffee|☕	Just Chatting
+cowork	Co-Working & Studying
+cod(e|ing)	Software and Game Development
+hack|linux|beginner.boost	Science & Technology
