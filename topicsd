@@ -296,6 +296,7 @@ while :; do
 	printf 'HTTP/1.1 200 OK\r\n' >&"${NETCAT[1]}"
 	printf 'Content-Type: text/plain; charset=utf-8\r\n' >&"${NETCAT[1]}"
 	printf 'Cache-Control: no-cache\r\n' >&"${NETCAT[1]}"
+	printf 'Connection: close\r\n' >&"${NETCAT[1]}"
 	printf 'Access-Control-Allow-Origin: *\r\n' >&"${NETCAT[1]}"
 	printf '\r\n' >&"${NETCAT[1]}"
 	printf '%s\n' "$topic" >&"${NETCAT[1]}"
