@@ -120,7 +120,7 @@ github_issue_emoji() {
 		esac
 	done <<<"$labels"
 
-	printf ':gear:\n'
+	printf '🐛\n'
 }
 
 github_issue_topic() {
