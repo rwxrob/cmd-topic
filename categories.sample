@@ -4,9 +4,10 @@
 # Patterns match case-insensitively against the full topic title
 # First match wins
 #
-bike|road	IRL
+shop|bike|road|climb|hike|walk|camp IRL
+yoga Fitness & Health
 writ	Writing
-coffee|☕	Just Chatting
-cowork	Co-Working & Studying
+coffee|☕|break	Just Chatting
+cowork|conf.*call	Co-Working & Studying
 cod(e|ing)	Software and Game Development
 hack|linux|beginner.boost	Science & Technology
