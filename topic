@@ -130,10 +130,10 @@ github_issue_topic() {
 	git rev-parse --is-inside-work-tree >/dev/null 2>&1 ||
 		die 'current directory is not inside a git repo'
 
-	out="$(gh issue view "$issue" --json topic --jq .topic 2>/dev/null)" ||
+	out="$(gh issue view "$issue" --json title --jq .title 2>/dev/null)" ||
 		die "could not get issue #$issue from current repo"
 
-	[[ -n "$out" ]] || die "issue #$issue has no topic"
+	[[ -n "$out" ]] || die "issue #$issue has no title"
 	printf '%s\n' "$out"
 }
 
