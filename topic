@@ -224,6 +224,20 @@ set_twitch_category() {
 		mv "$tmp" "$category_file"
 		return 0
 	done <"$categories_file"
+
+	local default_category="${TWITCH_DEFAULT_CATEGORY:-Co-working & Studying}"
+	game_id="$(twitch api get games \
+		-q "name=$default_category" 2>/dev/null |
+		jq -r '.data[0].id // empty')" || return 0
+	[[ -n "$game_id" ]] || return 0
+
+	twitch api patch channels \
+		-q "broadcaster_id=$TWITCH_BROADCASTER_ID" \
+		-b "$(jq -cn --arg id "$game_id" '{game_id:$id}')" >/dev/null 2>&1 || true
+
+	tmp="$(mktemp)"
+	printf '%s\n' "$default_category" >"$tmp"
+	mv "$tmp" "$category_file"
 }
 
 set_twitch_topic() {
