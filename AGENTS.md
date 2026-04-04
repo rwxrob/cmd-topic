@@ -61,4 +61,4 @@ second and displays the topic in a top bar alongside a clock and logo.
 ## Commit style
 
 Conventional commits (`feat:`, `fix:`, `add`, etc.), short imperative subject
-line. No Claude or AI attribution anywhere in commits, code, or issues.
+line. No Claude, Copilot, or AI attribution anywhere in commits, code, or issues.

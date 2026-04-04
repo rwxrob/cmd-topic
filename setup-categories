@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+target="$dir/categories.sample"
+link="$HOME/.config/twitch/categories"
+
+mkdir -p "$HOME/.config/twitch"
+ln -sf "$target" "$link"
+printf 'Linked %s -> %s\n' "$link" "$target"

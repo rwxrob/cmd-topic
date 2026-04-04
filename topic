@@ -197,9 +197,10 @@ mutation($emoji:String!, $message:String!) {
 }
 
 set_twitch_category() {
-	local topic categories_file pattern category game_id
+	local topic categories_file pattern category game_id category_file tmp
 	topic="$1"
 	categories_file="${TWITCH_CATEGORIES_FILE:-$HOME/.config/twitch/categories}"
+	category_file="${TOPICS:-$HOME/.topics}.category"
 
 	[[ -f "$categories_file" ]] || return 0
 	[[ -n "${TWITCH_BROADCASTER_ID:-}" ]] || return 0
@@ -218,6 +219,10 @@ set_twitch_category() {
 		twitch api patch channels \
 			-q "broadcaster_id=$TWITCH_BROADCASTER_ID" \
 			-b "$(jq -cn --arg id "$game_id" '{game_id:$id}')" >/dev/null 2>&1 || true
+
+		tmp="$(mktemp)"
+		printf '%s\n' "$category" >"$tmp"
+		mv "$tmp" "$category_file"
 		return 0
 	done <"$categories_file"
 }
