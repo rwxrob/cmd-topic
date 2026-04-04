@@ -9,7 +9,6 @@ need() {
 
 need twitch
 need jq
-need fzf
 
 : "${TWITCH_BROADCASTER_ID:?missing TWITCH_BROADCASTER_ID}"
 
@@ -19,20 +18,32 @@ categories_file="${TWITCH_CATEGORIES_FILE:-$HOME/.config/twitch/categories}"
 
 [[ -f "$categories_file" ]] || die "categories file not found: $categories_file"
 
-selected="$(
-	grep -v '^#' "$categories_file" | grep -v '^$' \
-		| while IFS=$'\t' read -r _pattern category game_id; do
-			[[ -n "$category" ]] || continue
-			printf '%s\t%s\n' "${game_id:-}" "$category"
-		done \
-		| sort -t$'\t' -k2 \
-		| fzf --prompt='category> ' \
-			--with-nth 2 \
-			--delimiter $'\t' \
-			--header 'Select Twitch category'
-)" || exit 0
-
-[[ -n "$selected" ]] || exit 0
+selected=""
+if [[ $# -gt 0 ]]; then
+	query="${*,,}"
+	while IFS=$'\t' read -r _pattern category game_id; do
+		[[ -n "$category" && "${_pattern:0:1}" != '#' ]] || continue
+		[[ "${category,,}" == *"$query"* ]] || continue
+		selected="${game_id:-}"$'\t'"$category"
+		break
+	done < <(grep -v '^#' "$categories_file" | grep -v '^$')
+	[[ -n "$selected" ]] || die "no category matching: $*"
+else
+	need fzf
+	selected="$(
+		grep -v '^#' "$categories_file" | grep -v '^$' \
+			| while IFS=$'\t' read -r _pattern category game_id; do
+				[[ -n "$category" ]] || continue
+				printf '%s\t%s\n' "${game_id:-}" "$category"
+			done \
+			| sort -t$'\t' -k2 \
+			| fzf --prompt='category> ' \
+				--with-nth 2 \
+				--delimiter $'\t' \
+				--header 'Select Twitch category'
+	)" || exit 0
+	[[ -n "$selected" ]] || exit 0
+fi
 
 game_id="$(printf '%s' "$selected" | cut -f1)"
 game_name="$(printf '%s' "$selected" | cut -f2-)"
