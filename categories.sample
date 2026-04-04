@@ -4,9 +4,9 @@
 # Patterns match case-insensitively against the full topic title
 # First match wins
 #
-hot.?tub|jacuzzi|pool.*soak|soak.*pool	Pools, Hot Tubs, and Beaches
-to fixie|(build|fix|tune|repair|wrench).*(bike|bicycle)|(bike|bicycle).*(build|fix|tune|repair|wrench)	Makers & Crafting
 shop|bike|road|climb|hike|walk|camp IRL
+hot.?tub|jacuzzi|pool.*soak|soak.*pool	Pools, Hot Tubs, and Beaches
+to fixie|(build|fixing|fixed|tune|repair|wrench).*(bike|bicycle)|(bike|bicycle).*(build|fixing|fixed|tune|repair|wrench)	Makers & Crafting
 yoga Fitness & Health
 writ	Writing
 coffee|☕|break	Just Chatting
