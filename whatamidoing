@@ -5,10 +5,18 @@ _have() { type "$1" &>/dev/null; }
 _have pbcopy && pbcopy <<<"$current"
 echo "$current"
 category_file="${topics}.category"
-if [[ -f "$category_file" ]]; then
-	cat "$category_file"
-elif [[ -n "${TWITCH_BROADCASTER_ID:-}" ]] && _have twitch && _have jq; then
-	twitch api get /channels \
+if [[ -n "${TWITCH_BROADCASTER_ID:-}" ]] && _have twitch && _have jq; then
+	live="$(twitch api get /channels \
 		-q "broadcaster_id=$TWITCH_BROADCASTER_ID" 2>/dev/null \
-		| jq -r '.data[0].game_name // empty'
+		| jq -r '.data[0].game_name // empty')"
+	if [[ -n "$live" ]]; then
+		tmp="$(mktemp)"
+		printf '%s\n' "$live" >"$tmp"
+		mv "$tmp" "$category_file"
+		printf '%s\n' "$live"
+	elif [[ -f "$category_file" ]]; then
+		cat "$category_file"
+	fi
+elif [[ -f "$category_file" ]]; then
+	cat "$category_file"
 fi
