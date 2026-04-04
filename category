@@ -18,6 +18,18 @@ categories_file="${TWITCH_CATEGORIES_FILE:-$HOME/.config/twitch/categories}"
 
 [[ -f "$categories_file" ]] || die "categories file not found: $categories_file"
 
+# non-interactive with no args: just print current category
+if [[ $# -eq 0 && ! -t 1 ]]; then
+	if [[ -f "$category_file" ]]; then
+		cat "$category_file"
+	elif command -v jq >/dev/null 2>&1; then
+		twitch api get /channels \
+			-q "broadcaster_id=$TWITCH_BROADCASTER_ID" 2>/dev/null \
+			| jq -r '.data[0].game_name // empty'
+	fi
+	exit 0
+fi
+
 selected=""
 if [[ $# -gt 0 ]]; then
 	query="${*,,}"
