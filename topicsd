@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 topics="${TOPICS:-${TOPIC:-$HOME/.topics}}"
 port="${PORT:-8080}"
@@ -284,16 +284,16 @@ _obs_pid=$!
 trap 'kill "$_eventsub_pid" "$_obs_pid" 2>/dev/null' EXIT
 
 while :; do
-	coproc NETCAT { nc -l "$port"; }
+	coproc NETCAT { nc -l "$port"; } 2>/dev/null || { sleep 1; continue; }
 
 	while IFS= read -r -u "${NETCAT[0]}" line; do
 		[[ "$line" == $'\r' || -z "$line" ]] && break
 	done
 
 	topic="$(sed -n '1{s/\r$//;p;}' "$topics" 2>/dev/null || true)"
-	topic="$(toemoji <<<"$topic")"
+	topic="$(toemoji <<<"$topic" 2>/dev/null || printf '%s' "$topic")"
 
-	printf 'HTTP/1.1 200 OK\r\n' >&"${NETCAT[1]}"
+	printf 'HTTP/1.1 200 OK\r\n' >&"${NETCAT[1]}" 2>/dev/null || { eval "exec ${NETCAT[1]}>&-" 2>/dev/null; eval "exec ${NETCAT[0]}<&-" 2>/dev/null; wait "$NETCAT_PID" 2>/dev/null || true; continue; }
 	printf 'Content-Type: text/plain; charset=utf-8\r\n' >&"${NETCAT[1]}"
 	printf 'Cache-Control: no-cache\r\n' >&"${NETCAT[1]}"
 	printf 'Connection: close\r\n' >&"${NETCAT[1]}"
