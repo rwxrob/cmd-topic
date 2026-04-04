@@ -4,10 +4,10 @@
 # Patterns match case-insensitively against the full topic title
 # First match wins
 #
-shop|bike|road|climb|hike|walk|camp IRL
+shop|bike|road|climb|hike|walk|camp|with fixie	IRL
 hot.?tub|jacuzzi|pool.*soak|soak.*pool	Pools, Hot Tubs, and Beaches
 to fixie|(build|fixing|fixed|tune|repair|wrench).*(bike|bicycle)|(bike|bicycle).*(build|fixing|fixed|tune|repair|wrench)	Makers & Crafting
-yoga Fitness & Health
+yoga	Fitness & Health
 writ	Writing
 coffee|☕|break	Just Chatting
 cowork|conf.*call	Co-Working & Studying
