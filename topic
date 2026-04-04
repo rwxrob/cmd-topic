@@ -205,39 +205,31 @@ set_twitch_category() {
 	[[ -n "${TWITCH_BROADCASTER_ID:-}" ]] || return 0
 	command -v twitch >/dev/null 2>&1 || return 0
 
-	while IFS=$'\t' read -r pattern category; do
+	_set_category() {
+		local name="$1" id="$2" tmp
+		if [[ -z "$id" ]]; then
+			id="$(twitch api get /games -q "name=$name" 2>/dev/null \
+				| jq -r '.data[0].id // empty')" || return 1
+		fi
+		[[ -n "$id" ]] || return 1
+		twitch api patch channels \
+			-q "broadcaster_id=$TWITCH_BROADCASTER_ID" \
+			-b "$(jq -cn --arg id "$id" '{game_id:$id}')" >/dev/null 2>&1 || true
+		tmp="$(mktemp)"
+		printf '%s\n' "$name" >"$tmp"
+		mv "$tmp" "$category_file"
+	}
+
+	while IFS=$'\t' read -r pattern category game_id; do
 		[[ -n "$pattern" && "${pattern:0:1}" != '#' ]] || continue
 		[[ -n "$category" ]] || continue
 		[[ "${topic,,}" =~ $pattern ]] || continue
-
-		game_id="$(twitch api get games \
-			-q "name=$category" 2>/dev/null |
-			jq -r '.data[0].id // empty')" || continue
-		[[ -n "$game_id" ]] || continue
-
-		twitch api patch channels \
-			-q "broadcaster_id=$TWITCH_BROADCASTER_ID" \
-			-b "$(jq -cn --arg id "$game_id" '{game_id:$id}')" >/dev/null 2>&1 || true
-
-		tmp="$(mktemp)"
-		printf '%s\n' "$category" >"$tmp"
-		mv "$tmp" "$category_file"
-		return 0
+		_set_category "$category" "${game_id:-}" && return 0
 	done <"$categories_file"
 
 	local default_category="${TWITCH_DEFAULT_CATEGORY:-Co-working & Studying}"
-	game_id="$(twitch api get games \
-		-q "name=$default_category" 2>/dev/null |
-		jq -r '.data[0].id // empty')" || return 0
-	[[ -n "$game_id" ]] || return 0
-
-	twitch api patch channels \
-		-q "broadcaster_id=$TWITCH_BROADCASTER_ID" \
-		-b "$(jq -cn --arg id "$game_id" '{game_id:$id}')" >/dev/null 2>&1 || true
-
-	tmp="$(mktemp)"
-	printf '%s\n' "$default_category" >"$tmp"
-	mv "$tmp" "$category_file"
+	local default_id="${TWITCH_DEFAULT_CATEGORY_ID:-1599346425}"
+	_set_category "$default_category" "$default_id"
 }
 
 set_twitch_topic() {

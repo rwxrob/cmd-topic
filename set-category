@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
+
+need() {
+	command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
+}
+
+need twitch
+need jq
+need fzf
+
+: "${TWITCH_BROADCASTER_ID:?missing TWITCH_BROADCASTER_ID}"
+
+topics="${TOPICS:-${TOPIC:-$HOME/.topics}}"
+category_file="${topics}.category"
+categories_file="${TWITCH_CATEGORIES_FILE:-$HOME/.config/twitch/categories}"
+
+[[ -f "$categories_file" ]] || die "categories file not found: $categories_file"
+
+selected="$(
+	grep -v '^#' "$categories_file" | grep -v '^$' \
+		| while IFS=$'\t' read -r _pattern category game_id; do
+			[[ -n "$category" ]] || continue
+			printf '%s\t%s\n' "${game_id:-}" "$category"
+		done \
+		| sort -t$'\t' -k2 \
+		| fzf --prompt='category> ' \
+			--with-nth 2 \
+			--delimiter $'\t' \
+			--header 'Select Twitch category'
+)" || exit 0
+
+[[ -n "$selected" ]] || exit 0
+
+game_id="$(printf '%s' "$selected" | cut -f1)"
+game_name="$(printf '%s' "$selected" | cut -f2-)"
+
+if [[ -z "$game_id" ]]; then
+	game_id="$(twitch api get /games -q "name=$game_name" 2>/dev/null \
+		| jq -r '.data[0].id // empty')"
+	[[ -n "$game_id" ]] || die "category not found on Twitch: $game_name"
+fi
+
+twitch api patch channels \
+	-q "broadcaster_id=$TWITCH_BROADCASTER_ID" \
+	-b "$(jq -cn --arg id "$game_id" '{game_id:$id}')" >/dev/null 2>&1
+
+tmp="$(mktemp)"
+printf '%s\n' "$game_name" >"$tmp"
+mv "$tmp" "$category_file"
+
+printf '%s\n' "$game_name"

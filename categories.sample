@@ -1,15 +1,15 @@
 # Twitch category mappings
 # Copy to ~/.config/twitch/categories (override with TWITCH_CATEGORIES_FILE)
-# Format: regex<TAB>Twitch Category Name
+# Format: regex<TAB>Twitch Category Name<TAB>game_id
 # Patterns match case-insensitively against the full topic title
 # First match wins
 #
-shop|bike|road|climb|hike|walk|camp|with fixie	IRL
-hot.?tub|jacuzzi|pool.*soak|soak.*pool	Pools, Hot Tubs, and Beaches
-to fixie|(build|fixing|fixed|tune|repair|wrench).*(bike|bicycle)|(bike|bicycle).*(build|fixing|fixed|tune|repair|wrench)	Makers & Crafting
-yoga	Fitness & Health
-writ	Writing
-coffee|☕|break	Just Chatting
-cowork|conf.*call|schedule	Co-working & Studying
-cod(e|ing)	Software and Game Development
-hack|linux|beginner.boost	Science & Technology
+shop|bike|road|climb|hike|walk|camp|with fixie	IRL	509672
+hot.?tub|jacuzzi|pool.*soak|soak.*pool	Pools, Hot Tubs, and Beaches	116747788
+to fixie|(build|fixing|fixed|tune|repair|wrench).*(bike|bicycle)|(bike|bicycle).*(build|fixing|fixed|tune|repair|wrench)	Makers & Crafting	509673
+yoga	Fitness & Health	509671
+writ	Writing & Reading	772157971
+coffee|☕|break	Just Chatting	509658
+cowork|conf.*call|schedule	Co-working & Studying	1599346425
+cod(e|ing)	Software and Game Development	1469308723
+hack|linux|beginner.boost	Science & Technology	509670
