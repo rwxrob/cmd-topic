@@ -10,6 +10,6 @@ to fixie|(build|fixing|fixed|tune|repair|wrench).*(bike|bicycle)|(bike|bicycle).
 yoga	Fitness & Health
 writ	Writing
 coffee|☕|break	Just Chatting
-cowork|conf.*call	Co-Working & Studying
+cowork|conf.*call|schedule	Co-working & Studying
 cod(e|ing)	Software and Game Development
 hack|linux|beginner.boost	Science & Technology
