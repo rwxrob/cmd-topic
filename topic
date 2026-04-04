@@ -47,7 +47,6 @@ need() {
 	command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
 }
 
-
 github_issue_emoji() {
 	local issue labels
 
@@ -212,8 +211,8 @@ set_twitch_category() {
 		[[ "${topic,,}" =~ $pattern ]] || continue
 
 		game_id="$(twitch api get games \
-			-q "name=$category" 2>/dev/null \
-			| jq -r '.data[0].id // empty')" || continue
+			-q "name=$category" 2>/dev/null |
+			jq -r '.data[0].id // empty')" || continue
 		[[ -n "$game_id" ]] || continue
 
 		twitch api patch channels \
@@ -410,9 +409,11 @@ main() {
 	set_github_status "$new_topic"
 	set_twitch_topic "$new_topic"
 	set_twitch_category "$new_topic"
-	set_restream_topic "$new_topic"
-	set_youtube_live_topic "$new_topic"
+	#	set_restream_topic "$new_topic"
+	#	set_youtube_live_topic "$new_topic"
 	head -1 "$topics_file"
+	local category_file="${topics_file}.category"
+	[[ -f "$category_file" ]] && cat "$category_file"
 }
 
 main "$@"
