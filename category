@@ -68,7 +68,7 @@ fi
 
 twitch api patch channels \
 	-q "broadcaster_id=$TWITCH_BROADCASTER_ID" \
-	-b "$(jq -cn --arg id "$game_id" '{game_id:$id}')" >/dev/null 2>&1
+	-b "$(jq -cn --arg id "$game_id" '{game_id:$id}')" >/dev/null 2>&1 || true
 
 tmp="$(mktemp)"
 printf '%s\n' "$game_name" >"$tmp"
