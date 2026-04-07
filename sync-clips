@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+clips_dir="${CLIPS_DIR:-$HOME/.clips}"
+broadcaster_id="${TWITCH_BROADCASTER_ID:-}"
+
+need() {
+	command -v "$1" >/dev/null 2>&1 || {
+		printf 'sync-clips: missing command: %s\n' "$1" >&2
+		exit 1
+	}
+}
+
+need twitch
+need jq
+need curl
+need sqlite3
+need perl
+
+[[ -n "$broadcaster_id" ]] || {
+	printf 'sync-clips: TWITCH_BROADCASTER_ID not set\n' >&2
+	exit 1
+}
+
+mkdir -p "$clips_dir"
+
+sqlite3 "$clips_dir/clips.db" "
+CREATE TABLE IF NOT EXISTS clips (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  twitch_id        TEXT    UNIQUE NOT NULL,
+  title            TEXT    DEFAULT '',
+  url              TEXT    DEFAULT '',
+  embed_url        TEXT    DEFAULT '',
+  broadcaster_id   TEXT    DEFAULT '',
+  broadcaster_name TEXT    DEFAULT '',
+  creator_id       TEXT    DEFAULT '',
+  creator_name     TEXT    DEFAULT '',
+  video_id         TEXT    DEFAULT '',
+  game_id          TEXT    DEFAULT '',
+  language         TEXT    DEFAULT '',
+  view_count       INTEGER DEFAULT 0,
+  created_at       TEXT    DEFAULT '',
+  thumbnail_url    TEXT    DEFAULT '',
+  duration         REAL    DEFAULT 0,
+  vod_offset       REAL,
+  is_featured      INTEGER DEFAULT 0,
+  weight           REAL    DEFAULT 1.0,
+  description      TEXT    DEFAULT '',
+  summary          TEXT    DEFAULT '',
+  downloaded       INTEGER DEFAULT 0
+);"
+
+regen_m3u() {
+	sqlite3 "$clips_dir/clips.db" \
+		"SELECT twitch_id, MAX(1, CAST(ROUND(weight) AS INTEGER)) FROM clips WHERE downloaded=1" |
+		while IFS='|' read -r cid reps; do
+			i=0
+			while [[ $i -lt $reps ]]; do
+				printf '%s/%s.mp4\n' "$clips_dir" "$cid"
+				i=$((i + 1))
+			done
+		done |
+		perl -MList::Util=shuffle -e 'print shuffle <STDIN>' \
+		>"$clips_dir/clips.m3u.tmp" && mv "$clips_dir/clips.m3u.tmp" "$clips_dir/clips.m3u"
+	printf 'sync-clips: m3u regenerated (%d entries)\n' \
+		"$(wc -l <"$clips_dir/clips.m3u" 2>/dev/null | tr -d ' ' || echo 0)" >&2
+}
+
+cursor=""
+fetched=0
+
+while :; do
+	if [[ -n "$cursor" ]]; then
+		response="$(twitch api get clips \
+			-q "broadcaster_id=$broadcaster_id" \
+			-q "first=100" \
+			-q "after=$cursor" 2>/dev/null)" || break
+	else
+		response="$(twitch api get clips \
+			-q "broadcaster_id=$broadcaster_id" \
+			-q "first=100" 2>/dev/null)" || break
+	fi
+
+	count="$(jq '.data | length' <<<"$response" 2>/dev/null || echo 0)"
+	[[ "$count" -gt 0 ]] || break
+
+	jq -r '
+	.data[] |
+	"INSERT OR IGNORE INTO clips (twitch_id,title,url,embed_url,broadcaster_id,broadcaster_name,creator_id,creator_name,video_id,game_id,language,view_count,created_at,thumbnail_url,duration,vod_offset,is_featured) VALUES (" +
+	(.id|@json) + "," +
+	(.title|@json) + "," +
+	(.url|@json) + "," +
+	(.embed_url|@json) + "," +
+	(.broadcaster_id|@json) + "," +
+	(.broadcaster_name|@json) + "," +
+	(.creator_id|@json) + "," +
+	(.creator_name|@json) + "," +
+	((.video_id // "")|@json) + "," +
+	((.game_id // "")|@json) + "," +
+	((.language // "")|@json) + "," +
+	(.view_count|tostring) + "," +
+	(.created_at|@json) + "," +
+	(.thumbnail_url|@json) + "," +
+	(.duration|tostring) + "," +
+	(if .vod_offset == null then "NULL" else (.vod_offset|tostring) end) + "," +
+	(if .is_featured then "1" else "0" end) + ");"
+	' <<<"$response" | sqlite3 "$clips_dir/clips.db" 2>/dev/null || true
+
+	fetched=$((fetched + count))
+	cursor="$(jq -r '.pagination.cursor // empty' <<<"$response" 2>/dev/null || true)"
+	[[ -n "$cursor" ]] || break
+done
+
+printf 'sync-clips: fetched metadata for %d clips\n' "$fetched" >&2
+
+downloaded=0
+skipped=0
+
+while IFS='|' read -r twitch_id thumbnail_url; do
+	[[ -n "$twitch_id" ]] || continue
+	dest="$clips_dir/$twitch_id.mp4"
+
+	if [[ -f "$dest" ]]; then
+		sqlite3 "$clips_dir/clips.db" \
+			"UPDATE clips SET downloaded=1 WHERE twitch_id='$twitch_id' AND downloaded=0;" 2>/dev/null || true
+		skipped=$((skipped + 1))
+		continue
+	fi
+
+	mp4_url="${thumbnail_url/-preview-480x272.jpg/.mp4}"
+	tmp="$(mktemp)"
+	if curl -fsSL -o "$tmp" "$mp4_url" 2>/dev/null; then
+		mv "$tmp" "$dest"
+		sqlite3 "$clips_dir/clips.db" \
+			"UPDATE clips SET downloaded=1 WHERE twitch_id='$twitch_id';" 2>/dev/null || true
+		downloaded=$((downloaded + 1))
+		printf 'sync-clips: downloaded %s\n' "$twitch_id" >&2
+	else
+		rm -f "$tmp"
+		printf 'sync-clips: download failed: %s\n' "$twitch_id" >&2
+	fi
+done < <(sqlite3 "$clips_dir/clips.db" \
+	"SELECT twitch_id, thumbnail_url FROM clips WHERE downloaded=0")
+
+printf 'sync-clips: %d downloaded, %d already present\n' "$downloaded" "$skipped" >&2
+
+regen_m3u

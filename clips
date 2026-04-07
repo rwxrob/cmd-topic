@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+clips_dir="${CLIPS_DIR:-$HOME/.clips}"
+db="$clips_dir/clips.db"
+
+need() {
+	command -v "$1" >/dev/null 2>&1 || {
+		printf 'clips: missing command: %s\n' "$1" >&2
+		exit 1
+	}
+}
+
+need sqlite3
+need perl
+
+[[ -f "$db" ]] || {
+	printf 'clips: database not found: %s\n' "$db" >&2
+	printf 'clips: run sync-clips first\n' >&2
+	exit 1
+}
+
+regen_m3u() {
+	[[ -f "$db" ]] || return 0
+	sqlite3 "$db" \
+		"SELECT twitch_id, MAX(1, CAST(ROUND(weight) AS INTEGER)) FROM clips WHERE downloaded=1" |
+		while IFS='|' read -r cid reps; do
+			i=0
+			while [[ $i -lt $reps ]]; do
+				printf '%s/%s.mp4\n' "$clips_dir" "$cid"
+				i=$((i + 1))
+			done
+		done |
+		perl -MList::Util=shuffle -e 'print shuffle <STDIN>' \
+		>"$clips_dir/clips.m3u.tmp" && mv "$clips_dir/clips.m3u.tmp" "$clips_dir/clips.m3u" || true
+}
+
+trap regen_m3u EXIT
+
+if [[ $# -eq 0 ]]; then
+	sqlite3 "$db" || true
+else
+	sqlite3 "$db" "$*"
+fi
