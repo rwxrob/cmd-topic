@@ -16,6 +16,7 @@ need jq
 need curl
 need sqlite3
 need perl
+need yt-dlp
 
 [[ -n "$broadcaster_id" ]] || {
 	printf 'sync-clips: TWITCH_BROADCASTER_ID not set\n' >&2
@@ -116,7 +117,7 @@ printf 'sync-clips: fetched metadata for %d clips\n' "$fetched" >&2
 downloaded=0
 skipped=0
 
-while IFS='|' read -r twitch_id thumbnail_url; do
+while IFS='|' read -r twitch_id clip_url; do
 	[[ -n "$twitch_id" ]] || continue
 	dest="$clips_dir/$twitch_id.mp4"
 
@@ -127,9 +128,8 @@ while IFS='|' read -r twitch_id thumbnail_url; do
 		continue
 	fi
 
-	mp4_url="${thumbnail_url/-preview-480x272.jpg/.mp4}"
-	tmp="$(mktemp)"
-	if curl -fsSL -o "$tmp" "$mp4_url" 2>/dev/null; then
+	tmp="$(mktemp "$clips_dir/.dl-XXXXXX.mp4")"
+	if yt-dlp -q --no-playlist -o "$tmp" "$clip_url" 2>/dev/null; then
 		mv "$tmp" "$dest"
 		sqlite3 "$clips_dir/clips.db" \
 			"UPDATE clips SET downloaded=1 WHERE twitch_id='$twitch_id';" 2>/dev/null || true
@@ -140,7 +140,7 @@ while IFS='|' read -r twitch_id thumbnail_url; do
 		printf 'sync-clips: download failed: %s\n' "$twitch_id" >&2
 	fi
 done < <(sqlite3 "$clips_dir/clips.db" \
-	"SELECT twitch_id, thumbnail_url FROM clips WHERE downloaded=0")
+	"SELECT twitch_id, url FROM clips WHERE downloaded=0")
 
 printf 'sync-clips: %d downloaded, %d already present\n' "$downloaded" "$skipped" >&2
 
