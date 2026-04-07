@@ -9,7 +9,7 @@ hot.?tub|jacuzzi|pool.*soak|soak.*pool	Pools, Hot Tubs, and Beaches	116747788
 to fixie|(build|fixing|fixed|tune|repair|wrench).*(bike|bicycle)|(bike|bicycle).*(build|fixing|fixed|tune|repair|wrench)	Makers & Crafting	509673
 yoga	Fitness & Health	509671
 writ	Writing & Reading	772157971
-coffee|☕|break	Just Chatting	509658
-cowork|conf.*call|schedule	Co-working & Studying	1599346425
+club|coffee|☕|break	Just Chatting	509658
+beginner.boost|cowork|conf.*call|schedule	Co-working & Studying	1599346425
 cod(e|ing)	Software and Game Development	1469308723
-hack|linux|beginner.boost	Science & Technology	509670
+hack|linux	Science & Technology	509670
