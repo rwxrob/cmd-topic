@@ -1,12 +1,38 @@
 # AGENTS.md
 
-Live streaming automation scripts for rwxrob. All scripts are plain bash
-(`set -euo pipefail`). No build system, no tests, no dependencies to install.
+Live streaming automation scripts for rwxrob. All scripts are plain bash (`set -euo pipefail`). No build system, no tests, no dependencies to install.
+
+## Rule: Commits
+
+- Always use conventional commits (`feat:`, `fix:`, `docs:`, `chore:`, etc.), short imperative subject line
+- Never add anything agent-related (copilot, claude, etc.) to commit messages, co-authorship, code, or issues
+- Committing directly to main is okay in this repo
+
+## Rule: Code style
+
+- Single-line paragraphs in all markdown files — no multi-line wrapped paragraphs
+- No underscores or spaces in filenames; use hyphens
+- No extensions on executable scripts, ever
+
+## Rule: Environment
+
+- Use `/usr/bin/open` (full path) to open files or URLs on macOS — never plain `open`
+
+## Rule: Secrets
+
+- Never commit secrets, config files, or database files (`clips.db`, token files, etc.)
+
+## Rule: Context maintenance
+
+At the end of every significant task, summarize current state, architectural decisions, and pending todos into this file so future sessions resume without friction.
+
+## Rule: Agent specific
+
+- Always use `gh copilot` not `copilot`
 
 ## Purpose
 
-Keeps a "current topic" in sync across Twitch stream title, YouTube live
-title, GitHub user status, OBS overlay, and OBS recording filenames.
+Keeps a "current topic" in sync across Twitch stream title, YouTube live title, GitHub user status, OBS overlay, and OBS recording filenames. Also manages a local clip cache, auto-switches OBS to a Clips scene when the belabox IRL source drops, and supports on-demand clip playback via channel points.
 
 ## State file
 
@@ -26,16 +52,13 @@ title, GitHub user status, OBS overlay, and OBS recording filenames.
 | `sync-clips` | Fetches all Twitch clips, downloads MP4s, manages `clips.db` and `clips.m3u` |
 | `what` | Prints current topic + live Twitch category; pbcopy of topic |
 | `setup-categories` | Symlinks `~/.config/twitch/categories` to `categories.sample` in repo |
-| `service-current-topic` | HTTP server (default port 8080) serving line 1 of `~/.topics`; background poller syncs Twitch title changes into the file |
-| `service-rename-recording` | Watches OBS via WebSocket; renames recordings to a slug of the current topic when recording stops |
 | `cache-twitch-token` | Refreshes/caches Twitch OAuth token via `twitch` CLI |
 | `cache-yt-token` | Refreshes/caches YouTube OAuth token; opens browser for first-time auth |
 | `test-yt-lookup` | Manual test: dumps live YouTube broadcasts as JSON |
 
 ## OBS overlay
 
-`obs/index.html` — browser source that polls `http://127.0.0.1:8080` every
-second and displays the topic in a top bar alongside a clock and logo.
+`obs/index.html` — browser source that polls `http://127.0.0.1:8080` every second and displays the topic in a top bar alongside a clock and logo.
 
 ## Environment variables
 
@@ -74,7 +97,20 @@ second and displays the topic in a top bar alongside a clock and logo.
 - OBS clips scene auto-switch: `eventSubscriptions:324` (64=Outputs + 256=MediaInputs + 4=Scenes)
 - Clip request IPC: `$CLIPS_DIR/clip-request` temp file written by EventSub, read by OBS watcher
 
-## Commit style
+## Current architecture
 
-Conventional commits (`feat:`, `fix:`, `add`, etc.), short imperative subject
-line. No Claude, Copilot, or AI attribution anywhere in commits, code, or issues.
+All scripts are standalone bash executables with no shared libraries. Data flows:
+
+- `topic` → writes `~/.topics`, calls Twitch/YouTube/GitHub APIs, reads `~/.config/twitch/categories` for auto-category
+- `topicsd` → HTTP server (port 8080, OBS overlay) + Twitch EventSub WS (title sync, channel points) + OBS WS (recording rename, belabox monitoring, clips scene switching, on-demand clip playback)
+- `sync-clips` → Twitch `/helix/clips` API → `~/.clips/clips.db` (SQLite) → MP4 download → weighted-shuffled `clips.m3u`
+- `clips` → sqlite3 wrapper that regenerates `clips.m3u` after any DB change
+- `category` → `~/.config/twitch/categories` lookup + fzf + Twitch API patch + local cache
+- `what` → reads `~/.topics` + live Twitch category query, pbcopy of topic
+
+Open PRs:
+- #11 `clips-scene-integration` — OBS clips scene auto-switch, belabox detection, channel points on-demand clips, `sync-clips`, `clips` commands
+
+## Current tags / versions
+
+No versioning — scripts are used directly from the repo in PATH.
