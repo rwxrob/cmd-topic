@@ -7,6 +7,12 @@ obs_ws_url="${OBS_WS_URL:-ws://127.0.0.1:4455}"
 obs_ws_password_file="${OBS_WS_PASSWORD_FILE:-$HOME/.config/obs-websocket/password}"
 obs_reconnect_delay="${RECONNECT_DELAY:-2}"
 log_prefix="${LOG_PREFIX:-topic-service}"
+clips_dir="${CLIPS_DIR:-$HOME/.clips}"
+clips_sync_interval="${CLIPS_SYNC_INTERVAL:-3600}"
+obs_clips_scene="${OBS_CLIPS_SCENE:-Clips}"
+obs_belabox_source="${OBS_BELABOX_SOURCE:-belabox}"
+obs_vlc_source="${OBS_VLC_SOURCE:-clips}"
+obs_clips_reward="${OBS_CLIPS_REWARD:-play clip}"
 
 need() {
 	command -v "$1" >/dev/null 2>&1 || {
@@ -148,8 +154,19 @@ rename_recording() {
 	log "    to: $dest"
 }
 
+obs_send_request() {
+	local request_type="$1" request_data="${2:-{}}"
+	jq -cn \
+		--arg rt "$request_type" \
+		--arg rid "req-$$-$RANDOM" \
+		--argjson rd "$request_data" \
+		'{op:6,d:{requestType:$rt,requestId:$rid,requestData:$rd}}' \
+		>&"${OBSWS[1]}" 2>/dev/null || true
+}
+
 obs_connect_and_watch() {
-	local hello salt challenge auth identify line event_type output_path
+	local hello salt challenge auth identify line op event_type input_name output_path rc
+	local _current_scene="" _prev_scene="" _clip_req_active=0
 
 	load_password
 
@@ -171,9 +188,9 @@ obs_connect_and_watch() {
 		}
 		auth="$(obs_auth_string "$OBS_WS_PASSWORD" "$salt" "$challenge")"
 		identify="$(jq -cn --arg auth "$auth" \
-			'{op:1,d:{rpcVersion:1,authentication:$auth,eventSubscriptions:64}}')"
+			'{op:1,d:{rpcVersion:1,authentication:$auth,eventSubscriptions:324}}')"
 	else
-		identify="$(jq -cn '{op:1,d:{rpcVersion:1,eventSubscriptions:64}}')"
+		identify="$(jq -cn '{op:1,d:{rpcVersion:1,eventSubscriptions:324}}')"
 	fi
 
 	printf '%s\n' "$identify" >&"${OBSWS[1]}"
@@ -191,18 +208,98 @@ obs_connect_and_watch() {
 
 	log "connected to OBS at $obs_ws_url"
 
-	while IFS= read -r -u "${OBSWS[0]}" line; do
-		line="$(printf '%s' "$line" | trim_cr)"
-		[[ -n "$line" ]] || continue
-		[[ "$(jq -r '.op // empty' <<<"$line")" == "5" ]] || continue
+	obs_send_request "GetCurrentProgramScene"
 
-		event_type="$(jq -r '.d.eventType // empty' <<<"$line")"
-		[[ "$event_type" == "RecordStateChanged" ]] || continue
+	while :; do
+		line=""
+		IFS= read -r -u "${OBSWS[0]}" -t 1 line
+		rc=$?
 
-		output_path="$(jq -r '.d.eventData.outputPath // empty' <<<"$line")"
-		[[ -n "$output_path" ]] || continue
+		if [[ $rc -ne 0 ]]; then
+			kill -0 "${OBSWS_PID:-0}" 2>/dev/null || break
+		fi
 
-		rename_recording "$output_path"
+		if [[ -n "$line" ]]; then
+			line="$(printf '%s' "$line" | trim_cr)"
+			op="$(jq -r '.op // empty' <<<"$line")"
+
+			if [[ "$op" == "7" ]]; then
+				if [[ "$(jq -r '.d.requestType // empty' <<<"$line")" == "GetCurrentProgramScene" ]]; then
+					_current_scene="$(jq -r '.d.responseData.currentProgramSceneName // empty' <<<"$line")"
+				fi
+
+			elif [[ "$op" == "5" ]]; then
+				event_type="$(jq -r '.d.eventType // empty' <<<"$line")"
+
+				case "$event_type" in
+				RecordStateChanged)
+					output_path="$(jq -r '.d.eventData.outputPath // empty' <<<"$line")"
+					[[ -n "$output_path" ]] && rename_recording "$output_path"
+					;;
+				CurrentProgramSceneChanged)
+					_current_scene="$(jq -r '.d.eventData.sceneName // empty' <<<"$line")"
+					;;
+				MediaInputPlaybackEnded)
+					input_name="$(jq -r '.d.eventData.inputName // empty' <<<"$line")"
+					if [[ "$input_name" == "$obs_belabox_source" ]]; then
+						_prev_scene="$_current_scene"
+						obs_send_request "SetCurrentProgramScene" \
+							"$(jq -cn --arg n "$obs_clips_scene" '{sceneName:$n}')"
+						obs_send_request "TriggerMediaInputAction" \
+							"$(jq -cn --arg n "$obs_vlc_source" '{inputName:$n,mediaAction:"OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART"}')"
+						log "belabox ended: switched to $obs_clips_scene"
+					elif [[ "$input_name" == "$obs_vlc_source" && $_clip_req_active -eq 1 ]]; then
+						obs_send_request "SetInputSettings" \
+							"$(jq -cn --arg n "$obs_vlc_source" --arg p "$clips_dir/clips.m3u" \
+								'{inputName:$n,inputSettings:{playlist:[{value:$p,hidden:false,selected:false}]}}')"
+						obs_send_request "TriggerMediaInputAction" \
+							"$(jq -cn --arg n "$obs_vlc_source" '{inputName:$n,mediaAction:"OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART"}')"
+						if [[ -n "$_prev_scene" ]]; then
+							obs_send_request "SetCurrentProgramScene" \
+								"$(jq -cn --arg n "$_prev_scene" '{sceneName:$n}')"
+							log "clip request done: restored to $_prev_scene"
+							_prev_scene=""
+						fi
+						_clip_req_active=0
+					fi
+					;;
+				MediaInputPlaybackStarted)
+					input_name="$(jq -r '.d.eventData.inputName // empty' <<<"$line")"
+					if [[ "$input_name" == "$obs_belabox_source" && -n "$_prev_scene" ]]; then
+						obs_send_request "SetCurrentProgramScene" \
+							"$(jq -cn --arg n "$_prev_scene" '{sceneName:$n}')"
+						log "belabox started: restored to $_prev_scene"
+						_prev_scene=""
+					fi
+					;;
+				esac
+			fi
+		fi
+
+		local req_file="$clips_dir/clip-request"
+		if [[ -f "$req_file" && $_clip_req_active -eq 0 ]]; then
+			local req_id
+			req_id="$(cat "$req_file" 2>/dev/null || true)"
+			rm -f "$req_file"
+			if [[ -n "$req_id" ]]; then
+				local req_mp4="$clips_dir/$req_id.mp4"
+				if [[ -f "$req_mp4" ]]; then
+					printf '%s\n' "$req_mp4" >"$clips_dir/clips-request.m3u"
+					_prev_scene="$_current_scene"
+					obs_send_request "SetInputSettings" \
+						"$(jq -cn --arg n "$obs_vlc_source" --arg p "$clips_dir/clips-request.m3u" \
+							'{inputName:$n,inputSettings:{playlist:[{value:$p,hidden:false,selected:false}]}}')"
+					obs_send_request "TriggerMediaInputAction" \
+						"$(jq -cn --arg n "$obs_vlc_source" '{inputName:$n,mediaAction:"OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART"}')"
+					obs_send_request "SetCurrentProgramScene" \
+						"$(jq -cn --arg n "$obs_clips_scene" '{sceneName:$n}')"
+					_clip_req_active=1
+					log "playing requested clip: $req_id"
+				else
+					log "requested clip not found locally: $req_id"
+				fi
+			fi
+		fi
 	done
 
 	return 1
@@ -254,22 +351,65 @@ _twitch_eventsub() {
 			sleep 2; continue
 		}
 
+		if [[ -n "${obs_clips_reward:-}" ]]; then
+			twitch api post eventsub/subscriptions -b "$(jq -cn \
+				--arg bid "$TWITCH_BROADCASTER_ID" \
+				--arg sid "$session_id" \
+				'{type:"channel.channel_points_custom_reward_redemption.add",version:"1",condition:{broadcaster_user_id:$bid},transport:{method:"websocket",session_id:$sid}}'
+			)" >/dev/null 2>&1 || true
+		fi
+
 		while IFS= read -r -u "${WS[0]}" line; do
 			[[ -n "$line" ]] || continue
 			[[ "$(jq -r '.metadata.message_type // empty' <<<"$line")" == "notification" ]] || continue
-			[[ "$(jq -r '.metadata.subscription_type // empty' <<<"$line")" == "channel.update" ]] || continue
 
-			title="$(jq -r '.payload.event.title // empty' <<<"$line")"
-			[[ -n "$title" ]] || continue
+			sub_type="$(jq -r '.metadata.subscription_type // empty' <<<"$line")"
 
-			current="$(sed -n '1p' "$topics" 2>/dev/null || true)"
-			[[ "$title" != "$current" ]] || continue
+			case "$sub_type" in
+			channel.update)
+				title="$(jq -r '.payload.event.title // empty' <<<"$line")"
+				[[ -n "$title" ]] || continue
 
-			topic "$title" >/dev/null
+				current="$(sed -n '1p' "$topics" 2>/dev/null || true)"
+				[[ "$title" != "$current" ]] || continue
+
+				topic "$title" >/dev/null
+				;;
+			channel.channel_points_custom_reward_redemption.add)
+				[[ -n "${obs_clips_reward:-}" ]] || continue
+				reward_title="$(jq -r '.payload.event.reward.title // empty' <<<"$line")"
+				[[ "$reward_title" == "$obs_clips_reward" ]] || continue
+
+				user_input="$(jq -r '.payload.event.user_input // empty' <<<"$line")"
+				[[ "$user_input" =~ ^[0-9]+$ ]] || continue
+
+				clip_twitch_id="$(sqlite3 "$clips_dir/clips.db" \
+					"SELECT twitch_id FROM clips WHERE id=$user_input AND downloaded=1 LIMIT 1;" \
+					2>/dev/null || true)"
+				[[ -n "$clip_twitch_id" ]] || {
+					log "clip #$user_input not found or not downloaded"
+					continue
+				}
+
+				printf '%s\n' "$clip_twitch_id" >"$clips_dir/clip-request"
+				log "clip request queued: #$user_input ($clip_twitch_id)"
+				;;
+			esac
 		done
 
 		eval "exec ${WS[1]}>&-" 2>/dev/null
 		sleep 2
+	done
+}
+
+# --- Clips syncer -----------------------------------------------------------
+
+_clips_syncer() {
+	while :; do
+		command -v twitch >/dev/null 2>&1 || { sleep 10; continue; }
+		[[ -n "${TWITCH_BROADCASTER_ID:-}" ]] || { sleep 10; continue; }
+		sync-clips >/dev/null 2>&1 || true
+		sleep "$clips_sync_interval"
 	done
 }
 
@@ -281,7 +421,9 @@ _twitch_eventsub &
 _eventsub_pid=$!
 _obs_watcher &
 _obs_pid=$!
-trap 'kill "$_eventsub_pid" "$_obs_pid" 2>/dev/null' EXIT
+_clips_syncer &
+_clips_pid=$!
+trap 'kill "$_eventsub_pid" "$_obs_pid" "$_clips_pid" 2>/dev/null' EXIT
 
 while :; do
 	coproc NETCAT { nc -l "$port"; } 2>/dev/null || { sleep 1; continue; }
