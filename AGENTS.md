@@ -74,7 +74,7 @@ Keeps a "current topic" in sync across Twitch stream title, YouTube live title, 
 | `YT_LOOPBACK_PORT` | `53682` | `cache-yt-token` |
 | `OBS_WS_URL` | `ws://127.0.0.1:4455` | `topicsd` |
 | `OBS_WS_PASSWORD_FILE` | `~/.config/obs-websocket/password` | `topicsd` |
-| `CLIPS_DIR` | `~/.clips` | `sync-clips`, `clips`, `topicsd` |
+| `CLIPS_DIR` | `~/Movies/twclips` (macOS), `~/Videos/twclips` (Linux) | `sync-clips`, `clips`, `topicsd` |
 | `CLIPS_SYNC_INTERVAL` | `3600` | `topicsd` |
 | `OBS_CLIPS_SCENE` | `Clips` | `topicsd` |
 | `OBS_BELABOX_SOURCE` | `belabox` | `topicsd` |
@@ -103,7 +103,7 @@ All scripts are standalone bash executables with no shared libraries. Data flows
 
 - `topic` → writes `~/.topics`, calls Twitch/YouTube/GitHub APIs, reads `~/.config/twitch/categories` for auto-category
 - `topicsd` → HTTP server (port 8080, OBS overlay) + Twitch EventSub WS (title sync, channel points) + OBS WS (recording rename, belabox monitoring, clips scene switching, on-demand clip playback)
-- `sync-clips` → Twitch `/helix/clips` API → `~/.clips/clips.db` (SQLite) → MP4 download → weighted-shuffled `clips.m3u`
+- `sync-clips` → Twitch `/helix/clips` API → `$CLIPS_DIR/clips.db` (SQLite) → MP4 download → weighted-shuffled `clips.m3u`
 - `clips` → sqlite3 wrapper that regenerates `clips.m3u` after any DB change
 - `category` → `~/.config/twitch/categories` lookup + fzf + Twitch API patch + local cache
 - `what` → reads `~/.topics` + live Twitch category query, pbcopy of topic

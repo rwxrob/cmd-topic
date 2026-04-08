@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-clips_dir="${CLIPS_DIR:-$HOME/.clips}"
+_vid_dir=Videos; [[ $(uname) == Darwin ]] && _vid_dir=Movies
+clips_dir="${CLIPS_DIR:-$HOME/$_vid_dir/twclips}"
 broadcaster_id="${TWITCH_BROADCASTER_ID:-}"
 
 need() {
