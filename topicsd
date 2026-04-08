@@ -189,9 +189,9 @@ obs_connect_and_watch() {
 		}
 		auth="$(obs_auth_string "$OBS_WS_PASSWORD" "$salt" "$challenge")"
 		identify="$(jq -cn --arg auth "$auth" \
-			'{op:1,d:{rpcVersion:1,authentication:$auth,eventSubscriptions:648}}')"
+			'{op:1,d:{rpcVersion:1,authentication:$auth,eventSubscriptions:324}}')"
 	else
-		identify="$(jq -cn '{op:1,d:{rpcVersion:1,eventSubscriptions:648}}')"
+		identify="$(jq -cn '{op:1,d:{rpcVersion:1,eventSubscriptions:324}}')"
 	fi
 
 	printf '%s\n' "$identify" >&"${OBSWS[1]}"
@@ -210,7 +210,6 @@ obs_connect_and_watch() {
 	log "connected to OBS at $obs_ws_url"
 
 	printf '%s\n' '{"op":6,"d":{"requestType":"GetCurrentProgramScene","requestId":"init-scene","requestData":{}}}' >&"${OBSWS[1]}"
-	printf '%s\n' "{\"op\":6,\"d\":{\"requestType\":\"GetMediaInputStatus\",\"requestId\":\"init-belabox\",\"requestData\":{\"inputName\":\"$obs_belabox_source\"}}}" >&"${OBSWS[1]}"
 
 	while :; do
 		line=""
@@ -255,14 +254,6 @@ obs_connect_and_watch() {
 						else
 							_prev_scene="$obs_live_scene"
 						fi
-					fi
-				elif [[ "$req_type" == "GetMediaInputStatus" ]]; then
-					local media_state
-					media_state="$(jq -r '.d.responseData.mediaState // empty' <<<"$line")"
-					if [[ "$media_state" == "OBS_MEDIA_STATE_PLAYING" ]]; then
-						log "belabox up"
-					else
-						log "belabox down (state: $media_state)"
 					fi
 				fi
 
