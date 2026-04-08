@@ -128,15 +128,13 @@ while IFS='|' read -r twitch_id clip_url; do
 		continue
 	fi
 
-	tmp="$(mktemp "$clips_dir/.dl-XXXXXX.mp4")"
-	if yt-dlp -q --no-playlist -o "$tmp" "$clip_url" 2>/dev/null; then
-		mv "$tmp" "$dest"
+	if yt-dlp -q --no-playlist -o "$dest" "$clip_url" 2>/dev/null; then
 		sqlite3 "$clips_dir/clips.db" \
 			"UPDATE clips SET downloaded=1 WHERE twitch_id='$twitch_id';" 2>/dev/null || true
 		downloaded=$((downloaded + 1))
 		printf 'sync-clips: downloaded %s\n' "$twitch_id" >&2
 	else
-		rm -f "$tmp"
+		rm -f "$dest" "${dest}.part"
 		printf 'sync-clips: download failed: %s\n' "$twitch_id" >&2
 	fi
 done < <(sqlite3 "$clips_dir/clips.db" \
