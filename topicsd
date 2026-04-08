@@ -305,6 +305,8 @@ obs_connect_and_watch() {
 						log "belabox up"
 						if [[ "$_current_scene" == "$obs_clips_scene" && -n "$_prev_scene" ]]; then
 							_belabox_restore_at=$(date +%s)
+						else
+							_belabox_ended_at=0
 						fi
 					fi
 					;;
