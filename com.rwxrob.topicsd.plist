@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rwxrob.topicsd</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/rwxrob/Repos/github.com/rwxrob/cmd-topic/topicsd</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>TWITCH_BROADCASTER_ID</key>
+        <string>447179030</string>
+        <key>HOME</key>
+        <string>/Users/rwxrob</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/rwxrob/Library/Logs/topicsd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/rwxrob/Library/Logs/topicsd.log</string>
+</dict>
+</plist>
