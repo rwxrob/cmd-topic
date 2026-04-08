@@ -385,7 +385,7 @@ _twitch_eventsub() {
 				[[ "$user_input" =~ ^[0-9]+$ ]] || continue
 
 				clip_twitch_id="$(sqlite3 "$clips_dir/clips.db" \
-					"SELECT twitch_id FROM clips WHERE id=$user_input AND downloaded=1 LIMIT 1;" \
+					"SELECT slug FROM clips WHERE id=$user_input AND downloaded=1 AND slug!='' LIMIT 1;" \
 					2>/dev/null || true)"
 				[[ -n "$clip_twitch_id" ]] || {
 					log "clip #$user_input not found or not downloaded"

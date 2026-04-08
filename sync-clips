@@ -51,16 +51,17 @@ CREATE TABLE IF NOT EXISTS clips (
   summary          TEXT    DEFAULT '',
   transcript       TEXT    DEFAULT '',
   youtube_id       TEXT    DEFAULT '',
+  slug             TEXT    DEFAULT '',
   downloaded       INTEGER DEFAULT 0
 );"
 
 regen_m3u() {
 	sqlite3 "$clips_dir/clips.db" \
-		"SELECT twitch_id, MAX(1, CAST(ROUND(weight) AS INTEGER)) FROM clips WHERE downloaded=1" |
-		while IFS='|' read -r cid reps; do
+		"SELECT slug, MAX(1, CAST(ROUND(weight) AS INTEGER)) FROM clips WHERE downloaded=1 AND slug != ''" |
+		while IFS='|' read -r slug reps; do
 			i=0
 			while [[ $i -lt $reps ]]; do
-				printf '%s/%s.mp4\n' "$clips_dir" "$cid"
+				printf '%s/%s.mp4\n' "$clips_dir" "$slug"
 				i=$((i + 1))
 			done
 		done |
@@ -120,28 +121,35 @@ printf 'sync-clips: fetched metadata for %d clips\n' "$fetched" >&2
 downloaded=0
 skipped=0
 
-while IFS='|' read -r twitch_id clip_url; do
+while IFS='|' read -r twitch_id clip_url title; do
 	[[ -n "$twitch_id" ]] || continue
-	dest="$clips_dir/$twitch_id.mp4"
 
-	if [[ -f "$dest" ]]; then
-		sqlite3 "$clips_dir/clips.db" \
-			"UPDATE clips SET downloaded=1 WHERE twitch_id='$twitch_id' AND downloaded=0;" 2>/dev/null || true
+	base_slug="$(printf '%s' "$title" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]/-/g' -e 's/-\{2,\}/-/g' -e 's/^-//' -e 's/-$//')"
+	[[ -n "$base_slug" ]] || base_slug="$twitch_id"
+	slug="$base_slug"
+	n=2
+	while [[ -f "$clips_dir/$slug.mp4" ]]; do
+		slug="$base_slug-$n"
+		n=$((n + 1))
+	done
+	dest="$clips_dir/$slug.mp4"
+
+	if [[ -n "$(sqlite3 "$clips_dir/clips.db" "SELECT slug FROM clips WHERE twitch_id='$twitch_id' AND slug!='' AND downloaded=1;")" ]]; then
 		skipped=$((skipped + 1))
 		continue
 	fi
 
 	if yt-dlp -q --no-playlist -o "$dest" "$clip_url" 2>/dev/null; then
 		sqlite3 "$clips_dir/clips.db" \
-			"UPDATE clips SET downloaded=1 WHERE twitch_id='$twitch_id';" 2>/dev/null || true
+			"UPDATE clips SET downloaded=1, slug='$slug' WHERE twitch_id='$twitch_id';" 2>/dev/null || true
 		downloaded=$((downloaded + 1))
-		printf 'sync-clips: downloaded %s\n' "$twitch_id" >&2
+		printf 'sync-clips: downloaded %s\n' "$slug" >&2
 	else
 		rm -f "$dest" "${dest}.part"
 		printf 'sync-clips: download failed: %s\n' "$twitch_id" >&2
 	fi
 done < <(sqlite3 "$clips_dir/clips.db" \
-	"SELECT twitch_id, url FROM clips WHERE downloaded=0")
+	"SELECT twitch_id, url, title FROM clips WHERE downloaded=0")
 
 printf 'sync-clips: %d downloaded, %d already present\n' "$downloaded" "$skipped" >&2
 
