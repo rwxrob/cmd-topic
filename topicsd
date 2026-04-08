@@ -12,6 +12,7 @@ clips_dir="${CLIPS_DIR:-$HOME/$_vid_dir/twclips}"
 clips_sync_interval="${CLIPS_SYNC_INTERVAL:-3600}"
 obs_clips_scene="${OBS_CLIPS_SCENE:-Clips}"
 obs_live_scene="${OBS_LIVE_SCENE:-IRL-Moblin}"
+obs_live_scene_file="${OBS_LIVE_SCENE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/topicsd-live-scene}"
 obs_belabox_source="${OBS_BELABOX_SOURCE:-Belabox}"
 obs_belabox_debounce="${OBS_BELABOX_DEBOUNCE:-5}"
 obs_belabox_stable="${OBS_BELABOX_STABLE:-30}"
@@ -246,7 +247,11 @@ obs_connect_and_watch() {
 				if [[ "$(jq -r '.d.requestType // empty' <<<"$line")" == "GetCurrentProgramScene" ]]; then
 					_current_scene="$(jq -r '.d.responseData.currentProgramSceneName // empty' <<<"$line")"
 					if [[ "$_current_scene" == "$obs_clips_scene" && -z "$_prev_scene" ]]; then
-						_prev_scene="$obs_live_scene"
+						if [[ -r "$obs_live_scene_file" ]]; then
+							_prev_scene="$(cat "$obs_live_scene_file")"
+						else
+							_prev_scene="$obs_live_scene"
+						fi
 					fi
 				fi
 
@@ -268,6 +273,8 @@ obs_connect_and_watch() {
 						if [[ $_belabox_ended_at -eq 0 && -n "$_current_scene" \
 							&& "$_current_scene" != "$obs_clips_scene" ]]; then
 							_prev_scene="$_current_scene"
+							mkdir -p "$(dirname "$obs_live_scene_file")"
+							printf '%s\n' "$_prev_scene" > "$obs_live_scene_file"
 							_belabox_ended_at=$(date +%s)
 							log "belabox ended: waiting ${obs_belabox_debounce}s before switching"
 						fi
