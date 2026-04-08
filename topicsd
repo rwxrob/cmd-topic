@@ -302,7 +302,7 @@ obs_connect_and_watch() {
 					input_name="$(jq -r '.d.eventData.inputName // empty' <<<"$line")"
 					if [[ "$input_name" == "$obs_belabox_source" ]]; then
 						log "belabox up"
-						if [[ "$_current_scene" == "$obs_clips_scene" && -n "$_prev_scene" ]]; then
+						if [[ "$_current_scene" == "$obs_clips_scene" && -n "$_prev_scene" && $_belabox_restore_at -eq 0 ]]; then
 							_belabox_restore_at=$(date +%s)
 						fi
 					fi
