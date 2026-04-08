@@ -269,6 +269,7 @@ obs_connect_and_watch() {
 				MediaInputPlaybackEnded)
 					input_name="$(jq -r '.d.eventData.inputName // empty' <<<"$line")"
 					if [[ "$input_name" == "$obs_belabox_source" ]]; then
+						log "belabox down"
 						_belabox_restore_at=0
 						if [[ $_belabox_ended_at -eq 0 && -n "$_current_scene" \
 							&& "$_current_scene" != "$obs_clips_scene" ]]; then
@@ -295,10 +296,11 @@ obs_connect_and_watch() {
 					;;
 				MediaInputPlaybackStarted)
 					input_name="$(jq -r '.d.eventData.inputName // empty' <<<"$line")"
-					if [[ "$input_name" == "$obs_belabox_source" \
-						&& "$_current_scene" == "$obs_clips_scene" \
-						&& -n "$_prev_scene" ]]; then
-						_belabox_restore_at=$(date +%s)
+					if [[ "$input_name" == "$obs_belabox_source" ]]; then
+						log "belabox up"
+						if [[ "$_current_scene" == "$obs_clips_scene" && -n "$_prev_scene" ]]; then
+							_belabox_restore_at=$(date +%s)
+						fi
 					fi
 					;;
 				esac
