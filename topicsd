@@ -11,6 +11,7 @@ _vid_dir=Videos; [[ $(uname) == Darwin ]] && _vid_dir=Movies
 clips_dir="${CLIPS_DIR:-$HOME/$_vid_dir/twclips}"
 clips_sync_interval="${CLIPS_SYNC_INTERVAL:-3600}"
 obs_clips_scene="${OBS_CLIPS_SCENE:-Clips}"
+obs_live_scene="${OBS_LIVE_SCENE:-IRL-Moblin}"
 obs_belabox_source="${OBS_BELABOX_SOURCE:-Belabox}"
 obs_belabox_debounce="${OBS_BELABOX_DEBOUNCE:-5}"
 obs_belabox_stable="${OBS_BELABOX_STABLE:-30}"
@@ -244,6 +245,9 @@ obs_connect_and_watch() {
 			if [[ "$op" == "7" ]]; then
 				if [[ "$(jq -r '.d.requestType // empty' <<<"$line")" == "GetCurrentProgramScene" ]]; then
 					_current_scene="$(jq -r '.d.responseData.currentProgramSceneName // empty' <<<"$line")"
+					if [[ "$_current_scene" == "$obs_clips_scene" && -z "$_prev_scene" ]]; then
+						_prev_scene="$obs_live_scene"
+					fi
 				fi
 
 			elif [[ "$op" == "5" ]]; then
