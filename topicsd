@@ -256,6 +256,7 @@ obs_connect_and_watch() {
 						else
 							_prev_scene="$obs_live_scene"
 						fi
+						_belabox_restore_at=$(date +%s)
 					fi
 				fi
 
@@ -274,7 +275,7 @@ obs_connect_and_watch() {
 					input_name="$(jq -r '.d.eventData.inputName // empty' <<<"$line")"
 					if [[ "$input_name" == "$obs_belabox_source" ]]; then
 						log "belabox down"
-						[[ "$_current_scene" != "$obs_clips_scene" ]] && _belabox_restore_at=0
+						_belabox_restore_at=0
 						if [[ $_belabox_ended_at -eq 0 && -n "$_current_scene" \
 							&& "$_current_scene" != "$obs_clips_scene" ]]; then
 							_prev_scene="$_current_scene"
@@ -302,7 +303,7 @@ obs_connect_and_watch() {
 					input_name="$(jq -r '.d.eventData.inputName // empty' <<<"$line")"
 					if [[ "$input_name" == "$obs_belabox_source" ]]; then
 						log "belabox up"
-						if [[ "$_current_scene" == "$obs_clips_scene" && -n "$_prev_scene" && $_belabox_restore_at -eq 0 ]]; then
+						if [[ "$_current_scene" == "$obs_clips_scene" && -n "$_prev_scene" ]]; then
 							_belabox_restore_at=$(date +%s)
 						fi
 					fi
