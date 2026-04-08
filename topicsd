@@ -159,10 +159,30 @@ rename_recording() {
 
 obs_send_request() {
 	local request_type="$1" request_data="${2:-{}}"
-	local msg
-	printf -v msg '{"op":6,"d":{"requestType":"%s","requestId":"req-%s-%s","requestData":%s}}' \
-		"$request_type" "$$" "$RANDOM" "$request_data"
-	printf '%s\n' "$msg" >&"${OBSWS[1]}" 2>/dev/null || true
+	python3 - "$obs_ws_url" "$request_type" "$request_data" << 'PYEOF' 2>/dev/null || true
+import sys, json, hashlib, base64
+try:
+    import websocket
+except ImportError:
+    sys.exit(1)
+url, req_type, req_data = sys.argv[1], sys.argv[2], sys.argv[3]
+ws = websocket.create_connection(url, timeout=3)
+hello = json.loads(ws.recv())
+auth_info = hello.get('d', {}).get('authentication', {})
+if auth_info:
+    import os
+    pw_file = os.path.expanduser('~/.config/obs-websocket/password')
+    pw = open(pw_file).read().strip()
+    secret = base64.b64encode(hashlib.sha256((pw + auth_info['salt']).encode()).digest()).decode()
+    auth = base64.b64encode(hashlib.sha256((secret + auth_info['challenge']).encode()).digest()).decode()
+    ws.send(json.dumps({"op":1,"d":{"rpcVersion":1,"authentication":auth,"eventSubscriptions":0}}))
+else:
+    ws.send(json.dumps({"op":1,"d":{"rpcVersion":1,"eventSubscriptions":0}}))
+ws.recv()
+ws.send(json.dumps({"op":6,"d":{"requestType":req_type,"requestId":"req-1","requestData":json.loads(req_data)}}))
+ws.recv()
+ws.close()
+PYEOF
 }
 
 obs_connect_and_watch() {
