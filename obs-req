@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+"""Send a single OBS WebSocket 5.x request and exit.
+Usage: obs-req <ws-url> <RequestType> <json-data>
+"""
+import sys, json, hashlib, base64, os
+
+try:
+    import websocket
+except ImportError:
+    sys.stderr.write("obs-req: websocket-client not installed\n")
+    sys.exit(1)
+
+if len(sys.argv) < 4:
+    sys.stderr.write("usage: obs-req <ws-url> <RequestType> <json-data>\n")
+    sys.exit(1)
+
+url, req_type, req_data = sys.argv[1], sys.argv[2], sys.argv[3]
+
+try:
+    ws = websocket.create_connection(url, timeout=3)
+    hello = json.loads(ws.recv())
+    auth_info = hello.get('d', {}).get('authentication', {})
+    if auth_info:
+        pw_file = os.environ.get('OBS_WS_PASSWORD_FILE',
+                                 os.path.expanduser('~/.config/obs-websocket/password'))
+        pw = open(pw_file).read().strip()
+        secret = base64.b64encode(
+            hashlib.sha256((pw + auth_info['salt']).encode()).digest()).decode()
+        auth = base64.b64encode(
+            hashlib.sha256((secret + auth_info['challenge']).encode()).digest()).decode()
+        ws.send(json.dumps({"op": 1, "d": {"rpcVersion": 1,
+                                            "authentication": auth,
+                                            "eventSubscriptions": 0}}))
+    else:
+        ws.send(json.dumps({"op": 1, "d": {"rpcVersion": 1, "eventSubscriptions": 0}}))
+    ws.recv()
+    ws.send(json.dumps({"op": 6, "d": {"requestType": req_type,
+                                        "requestId": "req-1",
+                                        "requestData": json.loads(req_data)}}))
+    ws.recv()
+    ws.close()
+except Exception as e:
+    sys.stderr.write(f"obs-req: {e}\n")
+    sys.exit(1)
