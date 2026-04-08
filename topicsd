@@ -230,6 +230,7 @@ obs_connect_and_watch() {
 						"$(jq -cn --arg n "$obs_vlc_source" '{inputName:$n,mediaAction:"OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART"}')"
 					log "belabox down ${obs_belabox_debounce}s: switched to $obs_clips_scene"
 					_belabox_ended_at=0
+					_current_scene="$obs_clips_scene"
 				fi
 			fi
 		fi
