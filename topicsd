@@ -269,10 +269,6 @@ obs_connect_and_watch() {
 				CurrentProgramSceneChanged)
 					_current_scene="$(jq -r '.d.eventData.sceneName // empty' <<<"$line")"
 					;;
-				MediaInputPlaybackEnded|MediaInputPlaybackStarted)
-					input_name="$(jq -r '.d.eventData.inputName // empty' <<<"$line")"
-					log "obs event: $event_type inputName='$input_name' (want '$obs_belabox_source')"
-					;;&
 				MediaInputPlaybackEnded)
 					input_name="$(jq -r '.d.eventData.inputName // empty' <<<"$line")"
 					if [[ "$input_name" == "$obs_belabox_source" ]]; then
