@@ -455,13 +455,21 @@ _clips_syncer() {
 
 need nc
 
+_pidfile="/tmp/topicsd-${USER}.pid"
+if [[ -f "$_pidfile" ]]; then
+	_old_pgid=$(<"$_pidfile")
+	kill -- "-${_old_pgid}" 2>/dev/null || true
+	sleep 0.5
+fi
+printf '%d\n' "$(ps -o pgid= -p $$ | tr -d ' ')" > "$_pidfile"
+
 _twitch_eventsub &
 _eventsub_pid=$!
 _obs_watcher &
 _obs_pid=$!
 _clips_syncer &
 _clips_pid=$!
-trap 'kill "$_eventsub_pid" "$_obs_pid" "$_clips_pid" 2>/dev/null' EXIT
+trap 'kill "$_eventsub_pid" "$_obs_pid" "$_clips_pid" 2>/dev/null; rm -f "$_pidfile"' EXIT
 
 while :; do
 	coproc NETCAT { nc -l "$port"; } 2>/dev/null || { sleep 1; continue; }
