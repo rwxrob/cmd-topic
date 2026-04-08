@@ -168,7 +168,8 @@ obs_send_request() {
 
 obs_connect_and_watch() {
 	local hello salt challenge auth identify line op event_type input_name output_path rc
-	local _current_scene="" _prev_scene="" _clip_req_active=0 _belabox_ended_at=0
+	local _current_scene="" _prev_scene="" _clip_req_active=0
+	local _belabox_ended_at=0 _belabox_playing_since=0
 
 	load_password
 
@@ -255,9 +256,14 @@ obs_connect_and_watch() {
 				MediaInputPlaybackEnded)
 					input_name="$(jq -r '.d.eventData.inputName // empty' <<<"$line")"
 					if [[ "$input_name" == "$obs_belabox_source" ]]; then
-						_prev_scene="$_current_scene"
-						_belabox_ended_at=$(date +%s)
-						log "belabox ended: waiting ${obs_belabox_debounce}s before switching"
+						now=$(date +%s)
+						if [[ $_belabox_playing_since -gt 0 ]] && \
+							(( now - _belabox_playing_since >= 3 )); then
+							_prev_scene="$_current_scene"
+							_belabox_ended_at=$now
+							log "belabox ended: waiting ${obs_belabox_debounce}s before switching"
+						fi
+						_belabox_playing_since=0
 					elif [[ "$input_name" == "$obs_vlc_source" && $_clip_req_active -eq 1 ]]; then
 						obs_send_request "SetInputSettings" \
 							"$(jq -cn --arg n "$obs_vlc_source" --arg p "$clips_dir/clips.m3u" \
@@ -276,14 +282,10 @@ obs_connect_and_watch() {
 				MediaInputPlaybackStarted)
 					input_name="$(jq -r '.d.eventData.inputName // empty' <<<"$line")"
 					if [[ "$input_name" == "$obs_belabox_source" ]]; then
+						_belabox_playing_since=$(date +%s)
 						if [[ $_belabox_ended_at -gt 0 ]]; then
 							log "belabox restarted: cancelling switch"
 							_belabox_ended_at=0
-							_prev_scene=""
-						elif [[ -n "$_prev_scene" ]]; then
-							obs_send_request "SetCurrentProgramScene" \
-								"$(jq -cn --arg n "$_prev_scene" '{sceneName:$n}')"
-							log "belabox started: restored to $_prev_scene"
 							_prev_scene=""
 						fi
 					fi
