@@ -11,7 +11,7 @@ _vid_dir=Videos; [[ $(uname) == Darwin ]] && _vid_dir=Movies
 clips_dir="${CLIPS_DIR:-$HOME/$_vid_dir/twclips}"
 clips_sync_interval="${CLIPS_SYNC_INTERVAL:-3600}"
 obs_clips_scene="${OBS_CLIPS_SCENE:-Clips}"
-obs_belabox_source="${OBS_BELABOX_SOURCE:-belabox}"
+obs_belabox_source="${OBS_BELABOX_SOURCE:-Belabox}"
 obs_vlc_source="${OBS_VLC_SOURCE:-VLC Video}"
 obs_clips_reward="${OBS_CLIPS_REWARD:-play clip}"
 
