@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS clips (
   description      TEXT    DEFAULT '',
   summary          TEXT    DEFAULT '',
   transcript       TEXT    DEFAULT '',
+  youtube_id       TEXT    DEFAULT '',
   downloaded       INTEGER DEFAULT 0
 );"
 
