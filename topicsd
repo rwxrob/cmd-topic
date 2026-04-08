@@ -209,7 +209,8 @@ obs_connect_and_watch() {
 
 	log "connected to OBS at $obs_ws_url"
 
-	obs_send_request "GetCurrentProgramScene"
+	printf '%s\n' '{"op":6,"d":{"requestType":"GetCurrentProgramScene","requestId":"init-scene","requestData":{}}}' >&"${OBSWS[1]}"
+	printf '%s\n' "{\"op\":6,\"d\":{\"requestType\":\"GetMediaInputStatus\",\"requestId\":\"init-belabox\",\"requestData\":{\"inputName\":\"$obs_belabox_source\"}}}" >&"${OBSWS[1]}"
 
 	while :; do
 		line=""
@@ -244,7 +245,9 @@ obs_connect_and_watch() {
 			op="$(jq -r '.op // empty' 2>/dev/null <<<"$line")"
 
 			if [[ "$op" == "7" ]]; then
-				if [[ "$(jq -r '.d.requestType // empty' <<<"$line")" == "GetCurrentProgramScene" ]]; then
+				local req_type
+				req_type="$(jq -r '.d.requestType // empty' <<<"$line")"
+				if [[ "$req_type" == "GetCurrentProgramScene" ]]; then
 					_current_scene="$(jq -r '.d.responseData.currentProgramSceneName // empty' <<<"$line")"
 					if [[ "$_current_scene" == "$obs_clips_scene" && -z "$_prev_scene" ]]; then
 						if [[ -r "$obs_live_scene_file" ]]; then
@@ -252,6 +255,14 @@ obs_connect_and_watch() {
 						else
 							_prev_scene="$obs_live_scene"
 						fi
+					fi
+				elif [[ "$req_type" == "GetMediaInputStatus" ]]; then
+					local media_state
+					media_state="$(jq -r '.d.responseData.mediaState // empty' <<<"$line")"
+					if [[ "$media_state" == "OBS_MEDIA_STATE_PLAYING" ]]; then
+						log "belabox up"
+					else
+						log "belabox down (state: $media_state)"
 					fi
 				fi
 
