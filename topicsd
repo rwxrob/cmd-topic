@@ -160,7 +160,8 @@ rename_recording() {
 }
 
 obs_send_request() {
-	local request_type="$1" request_data="${2:-{}}"
+	local request_type="$1" request_data="${2}"
+	[[ -z "$request_data" ]] && request_data='{}'
 	"$(dirname "$0")/obs-req" "$obs_ws_url" "$request_type" "$request_data" 2>>"${TOPICS_LOG:-/tmp/topicsd-obs.log}" || true
 }
 

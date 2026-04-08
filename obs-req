@@ -46,5 +46,7 @@ try:
     recv_json(ws)
     ws.close()
 except Exception as e:
+    import traceback
     sys.stderr.write(f"obs-req: {e}\n")
+    sys.stderr.write(traceback.format_exc())
     sys.exit(1)
