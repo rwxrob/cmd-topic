@@ -228,7 +228,7 @@ obs_connect_and_watch() {
 				_belabox_ended_at=0
 				_current_scene="$obs_clips_scene"
 			fi
-			if [[ $_belabox_restore_at -gt 0 ]] && (( now - _belabox_restore_at >= obs_belabox_debounce )); then
+			if [[ $_belabox_restore_at -gt 0 ]] && (( now - _belabox_restore_at >= obs_belabox_stable )); then
 				obs_send_request "SetCurrentProgramScene" \
 					"$(jq -cn --arg n "$_prev_scene" '{sceneName:$n}')"
 				log "belabox stable: restored to $_prev_scene"
@@ -306,6 +306,8 @@ obs_connect_and_watch() {
 						log "belabox up"
 						if [[ "$_current_scene" == "$obs_clips_scene" && -n "$_prev_scene" ]]; then
 							_belabox_restore_at=$(date +%s)
+						else
+							_belabox_ended_at=0
 						fi
 					fi
 					;;

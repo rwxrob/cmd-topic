@@ -16,9 +16,15 @@ if len(sys.argv) < 4:
 
 url, req_type, req_data = sys.argv[1], sys.argv[2], sys.argv[3]
 
+def recv_json(ws):
+    data = ws.recv()
+    if isinstance(data, bytes):
+        data = data.decode('utf-8')
+    return json.JSONDecoder().raw_decode(data.strip())[0]
+
 try:
     ws = websocket.create_connection(url, timeout=3)
-    hello = json.loads(ws.recv())
+    hello = recv_json(ws)
     auth_info = hello.get('d', {}).get('authentication', {})
     if auth_info:
         pw_file = os.environ.get('OBS_WS_PASSWORD_FILE',
@@ -33,11 +39,11 @@ try:
                                             "eventSubscriptions": 0}}))
     else:
         ws.send(json.dumps({"op": 1, "d": {"rpcVersion": 1, "eventSubscriptions": 0}}))
-    ws.recv()
+    recv_json(ws)
     ws.send(json.dumps({"op": 6, "d": {"requestType": req_type,
                                         "requestId": "req-1",
                                         "requestData": json.loads(req_data)}}))
-    ws.recv()
+    recv_json(ws)
     ws.close()
 except Exception as e:
     sys.stderr.write(f"obs-req: {e}\n")
