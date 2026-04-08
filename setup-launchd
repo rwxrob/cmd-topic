@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+label="com.rwxrob.topicsd"
+plist="$HOME/Library/LaunchAgents/$label.plist"
+topicsd_path="$(cd "$(dirname "$0")" && pwd)/topicsd"
+
+[[ $(uname) == Darwin ]] || {
+	printf 'setup-launchd: only supported on macOS\n' >&2
+	exit 1
+}
+
+[[ -n "${TWITCH_BROADCASTER_ID:-}" ]] || {
+	printf 'TWITCH_BROADCASTER_ID: ' >&2
+	read -r TWITCH_BROADCASTER_ID
+}
+
+[[ -n "$TWITCH_BROADCASTER_ID" ]] || {
+	printf 'setup-launchd: TWITCH_BROADCASTER_ID is required\n' >&2
+	exit 1
+}
+
+mkdir -p "$HOME/Library/LaunchAgents"
+mkdir -p "$HOME/Library/Logs"
+
+cat > "$plist" << PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$label</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$topicsd_path</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>TWITCH_BROADCASTER_ID</key>
+        <string>$TWITCH_BROADCASTER_ID</string>
+        <key>HOME</key>
+        <string>$HOME</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>$HOME/Library/Logs/topicsd.log</string>
+    <key>StandardErrorPath</key>
+    <string>$HOME/Library/Logs/topicsd.log</string>
+</dict>
+</plist>
+PLIST
+
+launchctl unload "$plist" 2>/dev/null || true
+launchctl load "$plist"
+
+printf 'setup-launchd: topicsd loaded as %s\n' "$label"
+printf 'setup-launchd: logs: %s/Library/Logs/topicsd.log\n' "$HOME"
