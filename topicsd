@@ -287,7 +287,7 @@ obs_connect_and_watch() {
 					elif [[ "$input_name" == "$obs_vlc_source" && $_clip_req_active -eq 1 ]]; then
 						obs_send_request "SetInputSettings" \
 							"$(jq -cn --arg n "$obs_vlc_source" --arg p "$clips_dir/clips.m3u" \
-								'{inputName:$n,inputSettings:{playlist:[{value:$p,hidden:false,selected:false}]}}')"
+								'{inputName:$n,inputSettings:{playlist:[{value:$p,hidden:false,selected:false}],shuffle:true}}')"
 						obs_send_request "TriggerMediaInputAction" \
 							"$(jq -cn --arg n "$obs_vlc_source" '{inputName:$n,mediaAction:"OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART"}')"
 						if [[ -n "$_prev_scene" ]]; then
