@@ -13,7 +13,7 @@ clips_sync_interval="${CLIPS_SYNC_INTERVAL:-3600}"
 obs_clips_scene="${OBS_CLIPS_SCENE:-Clips}"
 obs_live_scene="${OBS_LIVE_SCENE:-IRL-Moblin}"
 obs_live_scene_file="${OBS_LIVE_SCENE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/topicsd-live-scene}"
-obs_belabox_source="${OBS_BELABOX_SOURCE:-Belabox}"
+obs_belabox_source="${OBS_BELABOX_SOURCE:-LocalRTMP}"
 obs_belabox_debounce="${OBS_BELABOX_DEBOUNCE:-5}"
 obs_belabox_stable="${OBS_BELABOX_STABLE:-30}"
 obs_vlc_source="${OBS_VLC_SOURCE:-VLC Video}"
@@ -189,9 +189,9 @@ obs_connect_and_watch() {
 		}
 		auth="$(obs_auth_string "$OBS_WS_PASSWORD" "$salt" "$challenge")"
 		identify="$(jq -cn --arg auth "$auth" \
-			'{op:1,d:{rpcVersion:1,authentication:$auth,eventSubscriptions:324}}')"
+			'{op:1,d:{rpcVersion:1,authentication:$auth,eventSubscriptions:648}}')"
 	else
-		identify="$(jq -cn '{op:1,d:{rpcVersion:1,eventSubscriptions:324}}')"
+		identify="$(jq -cn '{op:1,d:{rpcVersion:1,eventSubscriptions:648}}')"
 	fi
 
 	printf '%s\n' "$identify" >&"${OBSWS[1]}"
