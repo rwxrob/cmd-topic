@@ -159,12 +159,10 @@ rename_recording() {
 
 obs_send_request() {
 	local request_type="$1" request_data="${2:-{}}"
-	jq -cn \
-		--arg rt "$request_type" \
-		--arg rid "req-$$-$RANDOM" \
-		--argjson rd "$request_data" \
-		'{op:6,d:{requestType:$rt,requestId:$rid,requestData:$rd}}' \
-		>&"${OBSWS[1]}" 2>/dev/null || true
+	local msg
+	printf -v msg '{"op":6,"d":{"requestType":"%s","requestId":"req-%s-%s","requestData":%s}}' \
+		"$request_type" "$$" "$RANDOM" "$request_data"
+	printf '%s\n' "$msg" >&"${OBSWS[1]}" 2>/dev/null || true
 }
 
 obs_connect_and_watch() {
