@@ -218,24 +218,25 @@ obs_connect_and_watch() {
 
 		if [[ $rc -ne 0 ]]; then
 			kill -0 "${OBSWS_PID:-0}" 2>/dev/null || break
-			now=$(date +%s)
-			if [[ $_belabox_ended_at -gt 0 ]] && (( now - _belabox_ended_at >= obs_belabox_debounce )); then
-				obs_send_request "SetCurrentProgramScene" \
-					"$(jq -cn --arg n "$obs_clips_scene" '{sceneName:$n}')"
-				obs_send_request "TriggerMediaInputAction" \
-					"$(jq -cn --arg n "$obs_vlc_source" '{inputName:$n,mediaAction:"OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART"}')"
-				log "belabox down ${obs_belabox_debounce}s: switched to $obs_clips_scene"
-				_belabox_ended_at=0
-				_current_scene="$obs_clips_scene"
-			fi
-			if [[ $_belabox_restore_at -gt 0 ]] && (( now - _belabox_restore_at >= obs_belabox_stable )); then
-				obs_send_request "SetCurrentProgramScene" \
-					"$(jq -cn --arg n "$_prev_scene" '{sceneName:$n}')"
-				log "belabox stable: restored to $_prev_scene"
-				_current_scene="$_prev_scene"
-				_prev_scene=""
-				_belabox_restore_at=0
-			fi
+		fi
+
+		now=$(date +%s)
+		if [[ $_belabox_ended_at -gt 0 ]] && (( now - _belabox_ended_at >= obs_belabox_debounce )); then
+			obs_send_request "SetCurrentProgramScene" \
+				"$(jq -cn --arg n "$obs_clips_scene" '{sceneName:$n}')"
+			obs_send_request "TriggerMediaInputAction" \
+				"$(jq -cn --arg n "$obs_vlc_source" '{inputName:$n,mediaAction:"OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART"}')"
+			log "belabox down ${obs_belabox_debounce}s: switched to $obs_clips_scene"
+			_belabox_ended_at=0
+			_current_scene="$obs_clips_scene"
+		fi
+		if [[ $_belabox_restore_at -gt 0 ]] && (( now - _belabox_restore_at >= obs_belabox_stable )); then
+			obs_send_request "SetCurrentProgramScene" \
+				"$(jq -cn --arg n "$_prev_scene" '{sceneName:$n}')"
+			log "belabox stable: restored to $_prev_scene"
+			_current_scene="$_prev_scene"
+			_prev_scene=""
+			_belabox_restore_at=0
 		fi
 
 		if [[ -n "$line" ]]; then
